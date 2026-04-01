@@ -500,7 +500,6 @@ const HomeView = ({ onSelectActivity }) => {
           <h1 className="home-title">SALUD FEST 2026</h1>
           <h1 className="home-subtitle">¡Vívelo en Toberín!</h1>
           <p className="home-subtitle">Explora las actividades y reserva tu lugar en las experiencias que te gustaría vivir 
-            <br></br>
             <br></br>¡Puedes inscribirte en tantas como quieras!
           </p>
         </div>
