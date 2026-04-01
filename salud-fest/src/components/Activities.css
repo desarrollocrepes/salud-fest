@@ -160,6 +160,7 @@
   justify-content: flex-start;
   text-align: left;
   width: 100%;
+  white-space: pre-wrap;
 }
 
 .activity-card-btn {
@@ -275,6 +276,7 @@
   color: #6b7280;
   margin-bottom: 2rem;
   line-height: 1.6;
+  white-space: pre-wrap;
 }
 
 .activity-detail-info {

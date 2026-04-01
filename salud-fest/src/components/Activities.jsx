@@ -1,8 +1,11 @@
 import './Activities.css';
 import React, { useState, useEffect, useMemo } from 'react';
-import { Bird, Puzzle, Bed, ArrowLeft, Users, MapPin, CheckCircle, Clock, X, Info, ChevronDown, Apple, Smile, Eye, Flower, Layers, Moon, Rose, Telescope, Utensils, Projector, User} from 'lucide-react';
+import { Clapperboard, ChefHat, Handshake, Bird, Puzzle, Bed, ArrowLeft, Users, MapPin, CheckCircle, Clock, X, Info, ChevronDown, Apple, Smile, Eye, Flower, Layers, Moon, Rose, Telescope, Utensils, Projector, User, Hand} from 'lucide-react';
 
 const IconMap = {
+  Clapperboard: Clapperboard,
+  ChefHat: ChefHat,
+  Handshake: Handshake,
   Bird: Bird,
   Puzzle: Puzzle,
   Bed: Bed, 
@@ -63,7 +66,7 @@ const actividades = [
   },
   {
     id: 2,
-    titulo: "Sonrisas sanas",
+    titulo: "Sonrisas Sanas",
     categoria: "Bienestar",
     theme: "emerald",
     icon: "Smile",
@@ -90,7 +93,7 @@ const actividades = [
     categoria: "Bienestar",
     theme: "emerald",
     icon: "Eye",
-    descripcion: "Te invitamos a vivir una experiencia de Confort Visual. Descubre cómo pequeños hábitos pueden mejorar tu salud visual. Trae tu fórmula y recibe orientación personalizada",
+    descripcion: "Te invitamos a vivir una experiencia de Confort Visual. Descubre cómo pequeños hábitos pueden mejorar tu salud visual.\nTrae tu fórmula y recibe orientación personalizada",
     cupoMax: 15,
     sesiones: [
       { 
@@ -142,7 +145,7 @@ const actividades = [
   // ACTIVIDADES DE ACADEMIA DE LAS ARTES
   {
     id: 4,
-    titulo: "Flores de bach",
+    titulo: "Flores de Bach",
     categoria: "Academia de las Artes",
     theme: "purple",
     icon: "Flower",
@@ -165,11 +168,11 @@ const actividades = [
   },
   {
     id: 5,
-    titulo: "Constelaciones familiares y collage",
+    titulo: "Constelaciones familiares & Collage",
     categoria: "Academia de las Artes",
     theme: "purple",
     icon: "Telescope",
-    descripcion: "Desde el arte y el collage exploraremos nuestra historia familiar para abrir nuevas miradas de bienestar. ¿Qué historias de tu familia siguen influyendo en tu vida hoy?",
+    descripcion: "Desde el arte y el collage exploraremos nuestra historia familiar para abrir nuevas miradas de bienestar. \n¿Qué historias de tu familia siguen influyendo en tu vida hoy?",
     cupoMax: 15,
     sesiones: [
       { 
@@ -191,7 +194,7 @@ const actividades = [
     titulo: "Despierta tus sentidos a través del alimento",
     categoria: "Academia de las Artes",
     theme: "purple",
-    icon: "Utensils",
+    icon: "ChefHat",
     descripcion: "¿Te gustaría vivir una experiencia de degustación? Explora sabores, conecta con los sentidos y redescubre el alimento",
     cupoMax: 20,
     sesiones: [
@@ -211,11 +214,11 @@ const actividades = [
   },
   {
     id: 7,
-    titulo: "Documental zonas azules",
+    titulo: "Documental: Zonas Azules",
     categoria: "Academia de las Artes",
     theme: "purple",
-    icon: "Projector",
-    descripcion: "Descubre los secretos de las mujeres y hombres más longevos del mundo. Proyección con crispetas",
+    icon: "Clapperboard",
+    descripcion: "Descubre los secretos de las mujeres y hombres más longevos del mundo. \nProyección con crispetas 🍿",
     cupoMax: 15,
     sesiones: [
       { 
@@ -232,7 +235,7 @@ const actividades = [
     titulo: "Constelaciones familiares",
     categoria: "Academia de las Artes",
     theme: "purple",
-    icon: "Puzzle",
+    icon: "Handshake",
     descripcion: "Un espacio para mirar tu historia familiar con respeto y gratitud. Reconoce lo recibido y abre nuevas posibilidades de bienestar en tu vida",
     cupoMax: 15,
     sesiones: [
@@ -246,11 +249,11 @@ const actividades = [
   },
   {
     id: 9,
-    titulo: "SPA dormir",
+    titulo: "SPA Dormir",
     categoria: "Academia de las Artes",
     theme: "purple",
     icon: "Bed",
-    descripcion: "¿Te regalarías 20 minutos de pausa para una siesta guiada que te ayude a recargar energía durante la jornada?",
+    descripcion: "¿Te regalarías 20 minutos para recargar tu energía? \nDisfruta una siesta guiada y vuelve a tu jornada con mayor bienestar",
     cupoMax: 12,
     sesiones: [
       { 
@@ -321,7 +324,7 @@ const actividades = [
     categoria: "Academia de las Artes",
     theme: "purple",
     icon: "Bird",
-    descripcion: "Un espacio para detenerte un momento, respirar y reconectar con tu cuerpo y tu mente. Visítalo en cualquier momento del día durante la semana para regalarte una pausa",
+    descripcion: "Un espacio para detenerte un momento, respirar y reconectar con tu cuerpo y tu mente. \nVisítalo en cualquier momento del día durante la semana para regalarte una pausa",
     cupoMax: 15,
     sesiones: [
       { 
@@ -420,6 +423,9 @@ const SessionModal = ({ activity, isOpen, onClose, onSelect, registrations }) =>
                       </div>
                       {session.actividad && (
                         <div className="text-xs text-gray-600 mb-2">{session.actividad}</div>
+                      )}
+                      {session.descripcion && (
+                        <div className="text-xs text-gray-700 mb-2 italic">{session.descripcion}</div>
                       )}
                       {session.location && (
                         <div className="text-xs text-gray-500 mb-2">{session.location}</div>
