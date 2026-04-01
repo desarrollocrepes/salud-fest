@@ -1,8 +1,9 @@
 import './Activities.css';
 import React, { useState, useEffect, useMemo } from 'react';
-import { Clapperboard, ChefHat, Handshake, Bird, Puzzle, Bed, ArrowLeft, Users, MapPin, CheckCircle, Clock, X, Info, ChevronDown, Apple, Smile, Eye, Flower, Layers, Moon, Rose, Telescope, Utensils, Projector, User, Hand} from 'lucide-react';
+import { Palette, Clapperboard, ChefHat, Handshake, Bird, Puzzle, Bed, ArrowLeft, Users, CheckCircle, X, Info, ChevronDown, Apple, Smile, Eye, Flower, Layers, Moon, Rose, Telescope, Utensils, Projector, User} from 'lucide-react';
 
 const IconMap = {
+  Palette: Palette,
   Clapperboard: Clapperboard,
   ChefHat: ChefHat,
   Handshake: Handshake,
@@ -171,7 +172,7 @@ const actividades = [
     titulo: "Constelaciones familiares & Collage",
     categoria: "Academia de las Artes",
     theme: "purple",
-    icon: "Telescope",
+    icon: "Palette",
     descripcion: "Desde el arte y el collage exploraremos nuestra historia familiar para abrir nuevas miradas de bienestar. \n¿Qué historias de tu familia siguen influyendo en tu vida hoy?",
     cupoMax: 15,
     sesiones: [
