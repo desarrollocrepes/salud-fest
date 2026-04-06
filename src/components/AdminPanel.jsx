@@ -22,64 +22,18 @@ const AdminPanel = ({ onBack }) => {
   const [filterStatus, setFilterStatus] = useState('');
   const [sortConfig, setSortConfig] = useState({ key: 'fecha', direction: 'desc' });
 
-  // Simulación de datos que vendría de la API
+  // Simulación de datos
   useEffect(() => {
-    // TODO: Reemplazar con llamada real a API
     const mockInscriptions = [
       {
         id: 1,
-        nombre: 'Juan Pérez',
-        email: 'juan@example.com',
-        telefono: '3001234567',
+        nombre: 'james',
+        email: 'james@gmail.com',
+        telefono: '123',
         curso: 'Aliméntate',
         sesion: 'Martes 14 Abr. - 8:30 a.m.',
-        status: 'confirmado',
         fecha: new Date('2025-04-01'),
         ubicacion: 'Sala 1'
-      },
-      {
-        id: 2,
-        nombre: 'María García',
-        email: 'maria@example.com',
-        telefono: '3007654321',
-        curso: 'Sonrisas Sanas',
-        sesion: 'Martes 14 Abr. - 2:00 p.m.',
-        status: 'confirmado',
-        fecha: new Date('2025-04-01'),
-        ubicacion: 'Sala 6'
-      },
-      {
-        id: 3,
-        nombre: 'Carlos López',
-        email: 'carlos@example.com',
-        telefono: '3009876543',
-        curso: 'Obsérvate',
-        sesion: 'Martes 14 Abr. - 7:00 p.m.',
-        status: 'pendiente',
-        fecha: new Date('2025-04-02'),
-        ubicacion: 'Sala 3'
-      },
-      {
-        id: 4,
-        nombre: 'Ana Martínez',
-        email: 'ana@example.com',
-        telefono: '3005555555',
-        curso: 'Aliméntate',
-        sesion: 'Miércoles 15 Abr. - 8:30 a.m.',
-        status: 'confirmado',
-        fecha: new Date('2025-04-02'),
-        ubicacion: 'Sala 1'
-      },
-      {
-        id: 5,
-        nombre: 'David Rodríguez',
-        email: 'david@example.com',
-        telefono: '3004444444',
-        curso: 'Sonrisas Sanas',
-        sesion: 'Jueves 16 Abr. - 8:00 a.m.',
-        status: 'cancelado',
-        fecha: new Date('2025-04-03'),
-        ubicacion: 'Sala 3'
       }
     ];
     
@@ -200,18 +154,7 @@ const AdminPanel = ({ onBack }) => {
               <ArrowLeft size={24} className="text-gray-700" />
             </button>
           )}
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900">Panel de Inscripciones</h1>
-            <p className="text-gray-600 mt-1">Gestiona todas las inscripciones a actividades</p>
-          </div>
         </div>
-        <button 
-          onClick={handleExportCSV}
-          className="admin-btn-primary flex items-center gap-2"
-        >
-          <Download size={20} />
-          Exportar CSV
-        </button>
       </div>
 
       {/* Estadísticas */}
@@ -221,38 +164,7 @@ const AdminPanel = ({ onBack }) => {
             <Users size={24} />
           </div>
           <div>
-            <p className="stat-label">Total de Inscripciones</p>
-            <p className="stat-value">{stats.total}</p>
-          </div>
-        </div>
-        
-        <div className="stat-card">
-          <div className="stat-icon stat-icon-success">
-            <CheckCircle size={24} />
-          </div>
-          <div>
-            <p className="stat-label">Confirmadas</p>
-            <p className="stat-value text-green-600">{stats.confirmados}</p>
-          </div>
-        </div>
-        
-        <div className="stat-card">
-          <div className="stat-icon stat-icon-warning">
-            <Clock size={24} />
-          </div>
-          <div>
-            <p className="stat-label">Pendientes</p>
-            <p className="stat-value text-yellow-600">{stats.pendientes}</p>
-          </div>
-        </div>
-        
-        <div className="stat-card">
-          <div className="stat-icon stat-icon-danger">
-            <AlertCircle size={24} />
-          </div>
-          <div>
-            <p className="stat-label">Canceladas</p>
-            <p className="stat-value text-red-600">{stats.cancelados}</p>
+            <p className="stat-value">Total de Inscripciones: {stats.total}</p>
           </div>
         </div>
       </div>
@@ -291,6 +203,14 @@ const AdminPanel = ({ onBack }) => {
             <option value="pendiente">Pendiente</option>
             <option value="cancelado">Cancelado</option>
           </select>
+
+          <button 
+            onClick={handleExportCSV}
+            className="admin-btn-primary flex items-center gap-2"
+          >
+          <Download size={20} />
+          Exportar CSV
+          </button>
         </div>
       </div>
 
@@ -305,7 +225,6 @@ const AdminPanel = ({ onBack }) => {
               <th onClick={() => handleSort('telefono')}>Teléfono</th>
               <th onClick={() => handleSort('curso')}>Curso</th>
               <th onClick={() => handleSort('sesion')}>Sesión</th>
-              <th onClick={() => handleSort('status')}>Estado</th>
               <th>Acciones</th>
             </tr>
           </thead>
@@ -323,7 +242,6 @@ const AdminPanel = ({ onBack }) => {
                     </span>
                   </td>
                   <td className="text-sm text-gray-600">{insc.sesion}</td>
-                  <td>{getStatusBadge(insc.status)}</td>
                   <td>
                     <button className="action-btn" title="Ver detalles">
                       Ver
@@ -340,11 +258,6 @@ const AdminPanel = ({ onBack }) => {
             )}
           </tbody>
         </table>
-      </div>
-
-      {/* Resumen de resultados */}
-      <div className="results-summary">
-        Mostrando <strong>{sortedInscriptions.length}</strong> de <strong>{inscriptions.length}</strong> inscripciones
       </div>
     </div>
   );

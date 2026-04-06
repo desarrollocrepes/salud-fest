@@ -1,6 +1,6 @@
 import './Activities.css';
 import React, { useState, useEffect, useMemo } from 'react';
-import { Palette, Clapperboard, ChefHat, Handshake, Bird, Puzzle, Bed, ArrowLeft, Users, CheckCircle, X, Info, ChevronDown, Apple, Smile, Eye, Flower, Layers, Moon, Rose, Telescope, Utensils, Projector, User} from 'lucide-react';
+import { Check, Palette, Clapperboard, ChefHat, Handshake, Bird, Puzzle, Bed, ArrowLeft, Users, CheckCircle, X, Info, ChevronDown, Apple, Smile, Eye, Flower, Layers, Moon, Rose, Telescope, Utensils, Projector, User, MapPin, Calendar} from 'lucide-react';
 
 const IconMap = {
   Palette: Palette,
@@ -23,41 +23,200 @@ const IconMap = {
   User: User
 };
 
+const ICON_ALIASES = {
+  apple: 'Apple',
+  smile: 'Smile',
+  eye: 'Eye',
+  flower: 'Flower',
+  palette: 'Palette',
+  chefhat: 'ChefHat',
+  clapperboard: 'Clapperboard',
+  handshake: 'Handshake',
+  bed: 'Bed',
+  bird: 'Bird',
+  puzzle: 'Puzzle',
+  layers: 'Layers',
+  moon: 'Moon',
+  rose: 'Rose',
+  telescope: 'Telescope',
+  utensils: 'Utensils',
+  projector: 'Projector',
+  user: 'User',
+  info: 'Info',
+  chef_hat: 'ChefHat',
+  'chef-hat': 'ChefHat'
+};
+
+const STRAPI_BASE_URL = (import.meta.env.VITE_STRAPI_URL || 'https://macfer.crepesywaffles.com').replace(/\/$/, '');
+const STRAPI_ACTIVIDADES_ENDPOINT = import.meta.env.VITE_STRAPI_ACTIVIDADES_ENDPOINT || '/api/sintonizarte-saludfest-academias';
+const STRAPI_ACTIVIDADES_QUERY = import.meta.env.VITE_STRAPI_ACTIVIDADES_QUERY || 'populate[sesiones][populate]=*&populate=icon';
+
+const getAttributes = (item) => item?.attributes || item || {};
+
+const getCategoriaLabel = (categoria) => {
+  if (typeof categoria === 'boolean') {
+    return categoria ? 'Academia de las Artes' : 'Bienestar';
+  }
+  return categoria || 'Academia de las Artes';
+};
+
+const getTheme = (theme, categoria) => {
+  if (theme) return theme;
+  return getCategoriaLabel(categoria) === 'Bienestar' ? 'emerald' : 'purple';
+};
+
+const normalizeIconCandidate = (value) => {
+  if (!value || typeof value !== 'string') return '';
+  const noExtension = value.replace(/\.[^/.]+$/, '');
+  return noExtension.trim();
+};
+
+const resolveIconKey = (...candidates) => {
+  for (const candidate of candidates) {
+    const iconCandidate = normalizeIconCandidate(candidate);
+    if (!iconCandidate) continue;
+
+    if (IconMap[iconCandidate]) return iconCandidate;
+
+    const normalized = iconCandidate.toLowerCase().replace(/[^a-z0-9_-]/g, '');
+    const aliasMatch = ICON_ALIASES[normalized];
+    if (aliasMatch && IconMap[aliasMatch]) return aliasMatch;
+  }
+
+  return 'Info';
+};
+
+const getIconName = (rawIcon) => {
+  if (typeof rawIcon === 'string') return resolveIconKey(rawIcon);
+
+  const iconAttributes = getAttributes(rawIcon?.data);
+  return resolveIconKey(
+    iconAttributes?.alternativeText,
+    iconAttributes?.name,
+    iconAttributes?.caption,
+    iconAttributes?.hash
+  );
+};
+
+const normalizeHorarios = (horarios) => {
+  const horarioItems = Array.isArray(horarios)
+    ? horarios
+    : Array.isArray(horarios?.data)
+      ? horarios.data
+      : [];
+
+  return horarioItems.map((horarioItem) => {
+    const horario = getAttributes(horarioItem);
+    return {
+      hora: horario.hora || '',
+      actividad: horario.actividad || '',
+      descripcion: horario.descripcion || '',
+      location: horario.location || horario.ubicacion || '',
+      cuposDisponibles: Number.isFinite(horario.cuposDisponibles) ? horario.cuposDisponibles : 0
+    };
+  });
+};
+
+const normalizeSesiones = (sesiones) => {
+  const sessionItems = Array.isArray(sesiones)
+    ? sesiones
+    : Array.isArray(sesiones?.data)
+      ? sesiones.data
+      : [];
+
+  return sessionItems.map((sessionItem) => {
+    const session = getAttributes(sessionItem);
+    return {
+      dia: session.dia || '',
+      horarios: normalizeHorarios(session.horarios)
+    };
+  });
+};
+
+const normalizeActividad = (actividadItem) => {
+  const topLevelId = actividadItem?.id;
+  const topLevelDocumentId = actividadItem?.documentId;
+  const actividad = getAttributes(actividadItem);
+  return {
+    id: topLevelId || actividad.id || topLevelDocumentId || actividad.documentId,
+    titulo: actividad.titulo || 'Actividad sin titulo',
+    categoria: getCategoriaLabel(actividad.categoria),
+    theme: getTheme(actividad.theme, actividad.categoria),
+    icon: resolveIconKey(
+      actividad.icon,
+      actividad.icono,
+      actividad.iconName,
+      actividad.iconoLucide,
+      getIconName(actividad.icon)
+    ),
+    descripcion: actividad.descripcion || '',
+    cupoMax: Number.isFinite(actividad.cupoMax) ? actividad.cupoMax : 0,
+    sesiones: normalizeSesiones(actividad.sesiones)
+  };
+};
+
+const fetchActividadesFromApi = async () => {
+  const endpoint = STRAPI_ACTIVIDADES_ENDPOINT.startsWith('/')
+    ? STRAPI_ACTIVIDADES_ENDPOINT
+    : `/${STRAPI_ACTIVIDADES_ENDPOINT}`;
+
+  const requestUrl = new URL(`${STRAPI_BASE_URL}${endpoint}`);
+  if (STRAPI_ACTIVIDADES_QUERY) {
+    const params = new URLSearchParams(STRAPI_ACTIVIDADES_QUERY);
+    params.forEach((value, key) => requestUrl.searchParams.append(key, value));
+  }
+
+  const response = await fetch(requestUrl.toString(), {
+    headers: {
+      'Content-Type': 'application/json'
+    }
+  });
+
+  if (!response.ok) {
+    throw new Error(`Error ${response.status}: no fue posible cargar las actividades`);
+  }
+
+  const payload = await response.json();
+  const items = Array.isArray(payload?.data) ? payload.data : [];
+
+  return items.map(normalizeActividad).filter((actividad) => actividad.id);
+};
+
 // DATA ACTIVIDADES DE BIENESTAR Y ACADEMIA DE LAS ARTES
 const actividades = [
   // ACTIVIDADES DE BIENESTAR
   {
     id: 1,
     titulo: "Aliméntate",
-    categoria: "Bienestar",
+    categoria: "Bienestar", // true or false - defsult null true academia
     theme: "emerald",
     icon: "Apple",
     descripcion: "¿Te gustaría aprender algunas preparaciones sencillas para cuidar tu salud?",
     cupoMax: 15,
     sesiones: [
       { 
-        dia: "Martes 14 Abr.", 
+        dia: "14 Abr.", 
         horarios: [
           { hora: "8:30 - 9:00 a.m.", actividad: "Brochetas de frutas", cuposDisponibles: 15 },
           { hora: "9:30 - 10:00 a.m.", actividad: "Brochetas de frutas", cuposDisponibles: 15 }
         ]
       },
       { 
-        dia: "Miércoles 15 Abr.", 
+        dia: "15 Abr.", 
         horarios: [
           { hora: "8:30 - 9:30 a.m.", actividad: "Parfait", cuposDisponibles: 15 },
           { hora: "9:30 - 10:00 a.m.", actividad: "Parfait", cuposDisponibles: 15 }
         ]
       },
       { 
-        dia: "Jueves 16 Abr.", 
+        dia: "16 Abr.", 
         horarios: [
           { hora: "3:00 - 3:30 p.m.", actividad: "Gelatina Creativa", cuposDisponibles: 15 },
           { hora: "4:00 - 4:30 p.m.", actividad: "Gelatina Creativa", cuposDisponibles: 15 }
         ]
       },
       { 
-        dia: "Viernes 17 Abr.", 
+        dia: "17 Abr.", 
         horarios: [
           { hora: "3:00 - 3:30 p.m.", actividad: "Brochetas saladas", cuposDisponibles: 15 },
           { hora: "4:00 - 4:30 p.m.", actividad: "Brochetas saladas", cuposDisponibles: 15 }
@@ -75,13 +234,13 @@ const actividades = [
     cupoMax: 15,
     sesiones: [
       { 
-        dia: "Martes 14 Abr.", 
+        dia: "14 Abr.", 
         horarios: [
           { hora: "2:00 - 3:00 p.m.", actividad: "Sonrisas Sanas", location: "Sala 6", cuposDisponibles: 15 }
         ]
       },
       { 
-        dia: "Jueves 16 Abr.", 
+        dia: "16 Abr.", 
         horarios: [
           { hora: "8:00 - 9:00 a.m.", actividad: "Sonrisas Sanas", location: "Sala 3", cuposDisponibles: 15 }
         ]
@@ -98,7 +257,7 @@ const actividades = [
     cupoMax: 15,
     sesiones: [
       { 
-        dia: "Martes 14 Abr.", 
+        dia: "14 Abr.", 
         horarios: [
           { hora: "7:00 - 7:15 p.m.", actividad: "Confort Visual", location: "Sala 3", cuposDisponibles: 1 },
           { hora: "7:15 - 7:30 p.m.", actividad: "Confort Visual", location: "Sala 3", cuposDisponibles: 1 },
@@ -107,7 +266,7 @@ const actividades = [
         ]
       },
       { 
-        dia: "Miércoles 15 Abr.", 
+        dia: "15 Abr.", 
         horarios: [
           { hora: "2:00 - 2:15 p.m.", actividad: "Confort Visual", location: "Sala 3", cuposDisponibles: 1 },
           { hora: "2:15 - 2:30 p.m.", actividad: "Confort Visual", location: "Sala 3", cuposDisponibles: 1 },
@@ -124,7 +283,7 @@ const actividades = [
         ]
       },
       { 
-        dia: "Jueves 16 Abr.", 
+        dia: "16 Abr.", 
         horarios: [
           { hora: "10:00 - 10:15 a.m.", actividad: "Confort Visual", location: "Sala 3", cuposDisponibles: 1 },
           { hora: "10:15 - 10:30 a.m.", actividad: "Confort Visual", location: "Sala 3", cuposDisponibles: 1 },
@@ -151,18 +310,18 @@ const actividades = [
     theme: "purple",
     icon: "Flower",
     descripcion: "¿Te gustaría explorar cómo las emociones influyen en tu bienestar? Crea una esencia floral personalizada para ti",
-    cupoMax: 15,
+    cupoMax: 12,
     sesiones: [
       { 
-        dia: "Martes 14 Abr.", 
+        dia: "14 Abr.", 
         horarios: [
-          { hora: "10:00 a.m. - 12:00 m", actividad: "Flores de Bach", location: "Sala 7", cuposDisponibles: 15 }
+          { hora: "10:00 a.m. - 12:00 m", actividad: "Flores de Bach", location: "Sala 7", cuposDisponibles: 12 }
         ]
       },
       { 
-        dia: "Miércoles 15 Abr.", 
+        dia: "15 Abr.", 
         horarios: [
-          { hora: "10:00 a.m. - 12:00 m", actividad: "Flores de Bach", location: "Sala 7", cuposDisponibles: 15 }
+          { hora: "10:00 a.m. - 12:00 m", actividad: "Flores de Bach", location: "Sala 7", cuposDisponibles: 12 }
         ]
       }
     ]
@@ -177,13 +336,13 @@ const actividades = [
     cupoMax: 15,
     sesiones: [
       { 
-        dia: "Martes 14 Abr.", 
+        dia: "14 Abr.", 
         horarios: [
           { hora: "4:30 - 6:30 p.m.", actividad: "Constelaciones Familiares & Collage", location: "Sala 10", cuposDisponibles: 15 }
         ]
       },
       { 
-        dia: "Jueves 16 Abr.", 
+        dia: "16 Abr.", 
         horarios: [
           { hora: "4:30 - 6:30 p.m.", actividad: "Constelaciones Familiares & Collage", location: "Sala 10", cuposDisponibles: 15 }
         ]
@@ -200,13 +359,13 @@ const actividades = [
     cupoMax: 20,
     sesiones: [
       { 
-        dia: "Jueves 16 Abr.", 
+        dia: "16 Abr.", 
         horarios: [
           { hora: "9:00 - 10:00 a.m.", actividad: "Despierta tus Sentidos", location: "CocinArte", cuposDisponibles: 20 }
         ]
       },
       { 
-        dia: "Viernes 17 Abr.", 
+        dia: "17 Abr.", 
         horarios: [
           { hora: "9:00 - 10:00 a.m.", actividad: "Despierta tus Sentidos", location: "CocinArte", cuposDisponibles: 20 }
         ]
@@ -223,7 +382,7 @@ const actividades = [
     cupoMax: 15,
     sesiones: [
       { 
-        dia: "Viernes 17 Abr.", 
+        dia: "17 Abr.", 
         horarios: [
           { hora: "12:00 - 1:00 p.m.", actividad: "Documental Zonas Azules", location: "Sala 10", cuposDisponibles: 12 },
           { hora: "1:30 - 2:30 p.m.", actividad: "Documental Zonas Azules", location: "Sala 10", cuposDisponibles: 12 }
@@ -241,7 +400,7 @@ const actividades = [
     cupoMax: 15,
     sesiones: [
       { 
-        dia: "Martes 14 Abr.", 
+        dia: "14 Abr.", 
         horarios: [
           { hora: "7:00 - 8:30 p.m.", actividad: "Constelaciones Familiares", location: "Sala 7", cuposDisponibles: 25 }
         ]
@@ -258,7 +417,7 @@ const actividades = [
     cupoMax: 12,
     sesiones: [
       { 
-        dia: "Martes 14 Abr.", 
+        dia: "14 Abr.", 
         horarios: [
           { hora: "12:00 - 12:20 p.m.", actividad: "SPA Dormir", cuposDisponibles: 12 },
           { hora: "12:20 - 12:40 p.m.", actividad: "SPA Dormir", cuposDisponibles: 12 },
@@ -272,7 +431,7 @@ const actividades = [
         ]
       },
       { 
-        dia: "Miércoles 15 Abr.", 
+        dia: "15 Abr.", 
         horarios: [
           { hora: "12:00 - 12:20 p.m.", actividad: "SPA Dormir", cuposDisponibles: 12 },
           { hora: "12:20 - 12:40 p.m.", actividad: "SPA Dormir", cuposDisponibles: 12 },
@@ -286,7 +445,7 @@ const actividades = [
         ]
       },
       { 
-        dia: "Jueves 16 Abr.", 
+        dia: "16 Abr.", 
         horarios: [
           { hora: "11:20 - 11:40 p.m.", actividad: "SPA Dormir", cuposDisponibles: 12 },
           { hora: "11:40 - 12:00 p.m.", actividad: "SPA Dormir", cuposDisponibles: 12 },
@@ -302,7 +461,7 @@ const actividades = [
         ]
       },
       { 
-        dia: "Viernes 17 Abr.", 
+        dia: "17 Abr.", 
         horarios: [
           { hora: "11:20 - 11:40 p.m.", actividad: "SPA Dormir", cuposDisponibles: 12 },
           { hora: "11:40 - 12:00 p.m.", actividad: "SPA Dormir", cuposDisponibles: 12 },
@@ -329,7 +488,7 @@ const actividades = [
     cupoMax: 15,
     sesiones: [
       { 
-        dia: "Martes 14 Abr.", 
+        dia: "14 Abr.", 
         horarios: [
           { hora: "10:30 a.m - 10:45 a.m.", actividad: "Calma: Paisajes sonoros", descripcion: "¿Te gustaría detenerte unos minutos para relajarte escuchando paisajes sonoros que calman la mente y el cuerpo?", location: "Sala 10", cuposDisponibles: 15 },
           { hora: "3:00 a.m - 3:15 p.m.", actividad: "Calma: Paisajes sonoros", descripcion: "¿Te gustaría detenerte unos minutos para relajarte escuchando paisajes sonoros que calman la mente y el cuerpo?", location: "Sala 10", cuposDisponibles: 15 },
@@ -337,21 +496,21 @@ const actividades = [
         ]
       },
       { 
-        dia: "Miércoles 15 Abr.", 
+        dia: "15 Abr.", 
         horarios: [
           { hora: "10:30 a.m - 10:45 a.m.", actividad: "Calma: Paisajes sonoros", descripcion: "¿Te gustaría detenerte unos minutos para relajarte escuchando paisajes sonoros que calman la mente y el cuerpo?", location: "Sala 10", cuposDisponibles: 15 },
           { hora: "", actividad: "Echemos cuento: Lectura silenciosa", descripcion: "¿Te animas a regalarte un momento de lectura en silencio o compartir un libro a través de trueque o donación?", cuposDisponibles: 15 }
         ]
       },
       { 
-        dia: "Jueves 16 Abr.", 
+        dia: "16 Abr.", 
         horarios: [
           { hora: "3:00 - 3:15 p.m.", actividad: "Calma: Paisajes sonoros", descripcion: "¿Te gustaría detenerte unos minutos para relajarte escuchando paisajes sonoros que calman la mente y el cuerpo?", location: "Sala 10", cuposDisponibles: 15 },
           { hora: "", actividad: "Echemos cuento: Lectura silenciosa", descripcion: "¿Te animas a regalarte un momento de lectura en silencio o compartir un libro a través de trueque o donación?", cuposDisponibles: 15 }
         ]
       },
       { 
-        dia: "Viernes 17 Abr.", 
+        dia: "17 Abr.", 
         horarios: [
           { hora: "3:00 - 3:15 p.m.", actividad: "Calma: Paisajes sonoros", descripcion: "¿Te gustaría detenerte unos minutos para relajarte escuchando paisajes sonoros que calman la mente y el cuerpo?", location: "Sala 10", cuposDisponibles: 15 },
           { hora: "", actividad: "Echemos cuento: Lectura silenciosa", descripcion: "¿Te animas a regalarte un momento de lectura en silencio o compartir un libro a través de trueque o donación?", cuposDisponibles: 15 }
@@ -384,12 +543,6 @@ const SessionModal = ({ activity, isOpen, onClose, onSelect, registrations }) =>
     <div className="modal-overlay">
       <div className="modal-content">
         <div className="modal-header">
-          <div className="modal-title-wrapper">
-            <span className={`modal-category ${isEmerald ? 'emerald' : 'purple'}`}>
-              {activity.categoria}
-            </span>
-            <h3 className="modal-title">{activity.titulo}</h3>
-          </div>
           <button onClick={onClose} className="modal-close-btn">
             <X className="w-6 h-6 text-gray-400" />
           </button>
@@ -449,7 +602,7 @@ const SessionModal = ({ activity, isOpen, onClose, onSelect, registrations }) =>
         </div>
         <div className="modal-footer">
           <button onClick={onClose} className={`confirm-btn ${isEmerald ? '' : 'purple'}`}>
-            CONFIRMAR INSCRIPCIÓN
+            CONFIRMAR INSCRIPCIÓN <Check className="w-4 h-4" />
           </button>
         </div>
       </div>
@@ -462,7 +615,7 @@ const ActivityCard = ({ activity, onSelect, isEmerald }) => {
   return (
     <div className={`activity-card ${isEmerald ? 'emerald' : 'purple'}`}>
       <div className={`activity-card-icon-wrapper ${isEmerald ? 'emerald' : 'purple'}`}>
-        <ActivityIcon size={100} strokeWidth={1} />
+        <ActivityIcon size={30} strokeWidth={2} />
       </div>
       <h3 className="activity-card-title">{activity.titulo}</h3>
       <div className="activity-card-header">
@@ -484,30 +637,76 @@ const ActivityCard = ({ activity, onSelect, isEmerald }) => {
   );
 };
 
-const HomeView = ({ onSelectActivity }) => {
+const HomeView = ({ onSelectActivity, actividades, isLoading, loadError }) => {
+  const [isWelcomeOpen, setIsWelcomeOpen] = useState(true);
+
   const actividadesBienestar = useMemo(() => {
     return actividades.filter(a => a.categoria === 'Bienestar');
-  }, []);
+  }, [actividades]);
 
   const actividadesArtes = useMemo(() => {
     return actividades.filter(a => a.categoria === 'Academia de las Artes');
-  }, []);
+  }, [actividades]);
 
   return (
     <div className="home-view">
-      <div className="home-header">
-        <div className="header-content">
-          <h1 className="home-title">SALUD FEST 2026</h1>
-          <h1 className="home-subtitle">¡Vívelo en Toberín!</h1>
-          <p className="home-subtitle">Explora las actividades y reserva tu lugar en las experiencias que te gustaría vivir 
-            <br></br>¡Puedes inscribirte en tantas como quieras!
-          </p>
+      {isWelcomeOpen && (
+        <div className="welcome-modal-overlay">
+          <div className="welcome-modal" role="dialog" aria-modal="true" aria-label="Bienvenida Salud Fest">
+            <button
+              className="welcome-close-btn"
+              onClick={() => setIsWelcomeOpen(false)}
+              aria-label="Cerrar bienvenida"
+            >
+              <X size={20} />
+            </button>
+
+            <div className="welcome-header">
+              <img src="/sf1.JPG" alt="Salud Fest Logo" className="welcome-logo" />
+              <div>
+                <h1 className="welcome-title">SALUD FEST 2026</h1>
+                <p className="welcome-subtitle">Vive una semana para reconectar contigo</p>
+              </div>
+            </div>
+
+            <div className="welcome-info-row">
+              <div className="welcome-info-item">
+                <MapPin size={18} className="info-icon" />
+                <span>Toberín, Bogotá</span>
+              </div>
+              <div className="welcome-info-item">
+                <Calendar size={18} className="info-icon" />
+                <span>Martes 14 - Viernes 17 de Abril</span>
+              </div>
+            </div>
+
+            <p className="welcome-description">
+              Explora las actividades y reserva tu lugar en las experiencias que te gustaría vivir.
+              <span className="subtitle-highlight"> ¡Puedes inscribirte en tantas como quieras!</span>
+            </p>
+
+            <button className="welcome-cta-btn" onClick={() => setIsWelcomeOpen(false)}>
+              VER ACTIVIDADES
+            </button>
+          </div>
         </div>
-      </div>
+      )}
 
       <div className="activities-container">
-        <div className="activities-column">
-          <div className="activities-grid">
+        {isLoading && (
+          <div className="text-center text-gray-500 py-8">Cargando actividades...</div>
+        )}
+
+        {!isLoading && loadError && (
+          <div className="text-center text-red-500 py-8">{loadError}</div>
+        )}
+
+        {!isLoading && !loadError && actividades.length === 0 && (
+          <div className="text-center text-gray-500 py-8">No hay actividades publicadas por el momento.</div>
+        )}
+
+        <section className="bienestar-section">
+          <div className="activities-grid bienestar-grid">
             {actividadesBienestar.map((activity) => (
               <ActivityCard
                 key={activity.id}
@@ -517,11 +716,11 @@ const HomeView = ({ onSelectActivity }) => {
               />
             ))}
           </div>
-        </div>
+        </section>
 
-        <div className="activities-column">
-          <div className="activities-grid">
-            {actividadesArtes.map((activity) => (
+        <section className="artes-section artes-section1">
+          <div className="activities-grid artes-grid">
+            {actividadesArtes.slice(0, 3).map((activity) => (
               <ActivityCard
                 key={activity.id}
                 activity={activity}
@@ -530,7 +729,33 @@ const HomeView = ({ onSelectActivity }) => {
               />
             ))}
           </div>
-        </div>
+        </section>
+
+        <section className="artes-section artes-section2">
+          <div className="activities-grid artes-grid">
+            {actividadesArtes.slice(3, 5).map((activity) => (
+              <ActivityCard
+                key={activity.id}
+                activity={activity}
+                onSelect={onSelectActivity}
+                isEmerald={activity.theme === 'emerald'}
+              />
+            ))}
+          </div>
+        </section>
+
+        <section className="artes-section artes-section3">
+          <div className="activities-grid artes-grid">
+            {actividadesArtes.slice(5).map((activity) => (
+              <ActivityCard
+                key={activity.id}
+                activity={activity}
+                onSelect={onSelectActivity}
+                isEmerald={activity.theme === 'emerald'}
+              />
+            ))}
+          </div>
+        </section>
       </div>
     </div>
   );
@@ -576,6 +801,40 @@ const Activities = () => {
   const [selectedActivity, setSelectedActivity] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [registrations, setRegistrations] = useState([]);
+  const [actividades, setActividades] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadActivities = async () => {
+      try {
+        setIsLoading(true);
+        setLoadError('');
+        const activitiesFromApi = await fetchActividadesFromApi();
+
+        if (isMounted) {
+          setActividades(activitiesFromApi);
+        }
+      } catch (error) {
+        if (isMounted) {
+          setLoadError(error.message || 'No fue posible cargar las actividades.');
+          setActividades([]);
+        }
+      } finally {
+        if (isMounted) {
+          setIsLoading(false);
+        }
+      }
+    };
+
+    loadActivities();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   const handleSelectActivity = (activity) => {
     setSelectedActivity(activity);
@@ -611,7 +870,12 @@ const Activities = () => {
 
   return (
     <div className="app-wrapper">
-      <HomeView onSelectActivity={handleSelectActivity} />
+      <HomeView
+        onSelectActivity={handleSelectActivity}
+        actividades={actividades}
+        isLoading={isLoading}
+        loadError={loadError}
+      />
       <SessionModal
         activity={selectedActivity}
         isOpen={isModalOpen}
