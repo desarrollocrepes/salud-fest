@@ -682,7 +682,7 @@ const HomeView = ({ onSelectActivity, actividades, isLoading, loadError }) => {
 
             <p className="welcome-description">
               Explora las actividades y reserva tu lugar en las experiencias que te gustaría vivir.
-              <span className="subtitle-highlight"> ¡Puedes inscribirte en tantas como quieras!</span>
+              <span className="subtitle-highlight"> <br></br>¡Puedes inscribirte en tantas como quieras!</span>
             </p>
 
             <button className="welcome-cta-btn" onClick={() => setIsWelcomeOpen(false)}>
