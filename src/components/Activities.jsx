@@ -29,6 +29,42 @@ const parseNumericValue = (value, fallback = 0) => {
   return fallback;
 };
 
+const formatFecha = (fechaStr) => {
+  if (!fechaStr || typeof fechaStr !== 'string') return '';
+  
+  // Si ya tiene formato "14 Abr." devolver como está
+  if (/^\d{1,2}\s+\w+\.$/.test(fechaStr)) return fechaStr;
+  
+  // Convertir "04/14/2026" o "2026-04-14" a "14 Abr."
+  let date;
+  if (fechaStr.includes('-')) {
+    // ISO format "2026-04-14"
+    date = new Date(fechaStr + 'T00:00:00');
+  } else if (fechaStr.includes('/')) {
+    // US format "04/14/2026" o "14/04/2026"
+    const parts = fechaStr.split('/');
+    if (parts.length === 3) {
+      // Detectar si es MM/DD/YYYY o DD/MM/YYYY basado en el valor
+      const firstNum = parseInt(parts[0]);
+      const secondNum = parseInt(parts[1]);
+      if (firstNum > 12) {
+        // DD/MM/YYYY
+        date = new Date(parts[2], parts[1] - 1, parts[0]);
+      } else {
+        // MM/DD/YYYY
+        date = new Date(parts[2], parts[0] - 1, parts[1]);
+      }
+    }
+  }
+  
+  if (!date || isNaN(date.getTime())) return fechaStr;
+  
+  const meses = ['Ene.', 'Feb.', 'Mar.', 'Abr.', 'May.', 'Jun.', 'Jul.', 'Ago.', 'Sep.', 'Oct.', 'Nov.', 'Dic.'];
+  const dia = date.getDate();
+  const mes = meses[date.getMonth()];
+  return `${dia} ${mes}`;
+};
+
 const toAbsoluteMediaUrl = (url) => {
   if (!url || typeof url !== 'string') return '';
   if (/^(https?:\/\/|data:|blob:)/i.test(url)) return url;
@@ -70,7 +106,9 @@ const getIconUrl = (rawIcon) => {
   );
 };
 
-const normalizeHorarios = (horarios) => {
+const normalizeHorarios = (horarios, fechaSession = '') => {
+  // Esta función ya no se usa directamente
+  // Los horarios se normalizan dentro de normalizeSesiones
   const horarioItems = Array.isArray(horarios)
     ? horarios
     : Array.isArray(horarios?.data)
@@ -79,8 +117,19 @@ const normalizeHorarios = (horarios) => {
 
   return horarioItems.map((horarioItem) => {
     const horario = getAttributes(horarioItem);
+    
+    const horaInicio = horario.hora_inicio || horario.hora || '';
+    const horaFin = horario.hora_fin || '';
+    let horaFormato = horaInicio;
+    if (horaFin && horaInicio) {
+      const inicioCorto = horaInicio.split(':').slice(0, 2).join(':');
+      const finCorto = horaFin.split(':').slice(0, 2).join(':');
+      horaFormato = `${inicioCorto} - ${finCorto}`;
+    }
+    
     return {
-      hora: horario.hora || '',
+      dia: formatFecha(horario.dia || fechaSession || ''),
+      hora: horaFormato,
       actividad: horario.actividad || '',
       descripcion: horario.descripcion || '',
       location: horario.location || horario.ubicacion || '',
@@ -96,13 +145,52 @@ const normalizeSesiones = (sesiones) => {
       ? sesiones.data
       : [];
 
-  return sessionItems.map((sessionItem) => {
+  // Normalizar cada horario individual
+  const horariosNormalizados = sessionItems.flatMap((sessionItem) => {
     const session = getAttributes(sessionItem);
+    
+    // Combinar hora_inicio y hora_fin en formato "HH:MM - HH:MM"
+    const horaInicio = session.hora_inicio || session.hora || '';
+    const horaFin = session.hora_fin || '';
+    let horaFormato = horaInicio;
+    if (horaFin && horaInicio) {
+      const inicioCorto = horaInicio.split(':').slice(0, 2).join(':');
+      const finCorto = horaFin.split(':').slice(0, 2).join(':');
+      horaFormato = `${inicioCorto} - ${finCorto}`;
+    }
+    
     return {
-      dia: session.dia || '',
-      horarios: normalizeHorarios(session.horarios)
+      dia: formatFecha(session.dia || ''),
+      diaOriginal: session.dia,
+      hora: horaFormato,
+      actividad: session.actividad || '',
+      descripcion: session.descripcion || '',
+      location: session.location || session.ubicacion || '',
+      cuposDisponibles: parseNumericValue(session.cuposDisponibles, 0)
     };
   });
+
+  // Agrupar horarios por día
+  const sesionesAgrupadas = {};
+  horariosNormalizados.forEach((horario) => {
+    const diaKey = horario.dia;
+    if (!sesionesAgrupadas[diaKey]) {
+      sesionesAgrupadas[diaKey] = {
+        dia: horario.dia,
+        diaOriginal: horario.diaOriginal,
+        horarios: []
+      };
+    }
+    sesionesAgrupadas[diaKey].horarios.push({
+      hora: horario.hora,
+      actividad: horario.actividad,
+      descripcion: horario.descripcion,
+      location: horario.location,
+      cuposDisponibles: horario.cuposDisponibles
+    });
+  });
+
+  return Object.values(sesionesAgrupadas);
 };
 
 const normalizeActividad = (actividadItem) => {
@@ -148,344 +236,6 @@ const fetchActividadesFromApi = async () => {
   return items.map(normalizeActividad).filter((actividad) => actividad.id);
 };
 
-// DATA ACTIVIDADES DE BIENESTAR Y ACADEMIA DE LAS ARTES
-const actividades = [
-  // ACTIVIDADES DE BIENESTAR
-  {
-    id: 1,
-    titulo: "Aliméntate",
-    categoria: "Bienestar", // true or false - defsult null true academia
-    theme: "emerald",
-    icon: "Apple",
-    descripcion: "¿Te gustaría aprender algunas preparaciones sencillas para cuidar tu salud?",
-    cupoMax: 15,
-    sesiones: [
-      { 
-        dia: "14 Abr.", 
-        horarios: [
-          { hora: "8:30 - 9:00 a.m.", actividad: "Brochetas de frutas", cuposDisponibles: 15 },
-          { hora: "9:30 - 10:00 a.m.", actividad: "Brochetas de frutas", cuposDisponibles: 15 }
-        ]
-      },
-      { 
-        dia: "15 Abr.", 
-        horarios: [
-          { hora: "8:30 - 9:30 a.m.", actividad: "Parfait", cuposDisponibles: 15 },
-          { hora: "9:30 - 10:00 a.m.", actividad: "Parfait", cuposDisponibles: 15 }
-        ]
-      },
-      { 
-        dia: "16 Abr.", 
-        horarios: [
-          { hora: "3:00 - 3:30 p.m.", actividad: "Gelatina Creativa", cuposDisponibles: 15 },
-          { hora: "4:00 - 4:30 p.m.", actividad: "Gelatina Creativa", cuposDisponibles: 15 }
-        ]
-      },
-      { 
-        dia: "17 Abr.", 
-        horarios: [
-          { hora: "3:00 - 3:30 p.m.", actividad: "Brochetas saladas", cuposDisponibles: 15 },
-          { hora: "4:00 - 4:30 p.m.", actividad: "Brochetas saladas", cuposDisponibles: 15 }
-        ]
-      }
-    ]
-  },
-  {
-    id: 2,
-    titulo: "Sonrisas Sanas",
-    categoria: "Bienestar",
-    theme: "emerald",
-    icon: "Smile",
-    descripcion: "Descubre la importancia de cuidar tu salud oral y aprende hábitos sencillos para mantener una sonrisa sana, fuerte y llena de bienestar",
-    cupoMax: 15,
-    sesiones: [
-      { 
-        dia: "14 Abr.", 
-        horarios: [
-          { hora: "2:00 - 3:00 p.m.", actividad: "Sonrisas Sanas", location: "Sala 6", cuposDisponibles: 15 }
-        ]
-      },
-      { 
-        dia: "16 Abr.", 
-        horarios: [
-          { hora: "8:00 - 9:00 a.m.", actividad: "Sonrisas Sanas", location: "Sala 3", cuposDisponibles: 15 }
-        ]
-      }
-    ]
-  },
-  {
-    id: 3,
-    titulo: "Obsérvate",
-    categoria: "Bienestar",
-    theme: "emerald",
-    icon: "Eye",
-    descripcion: "Te invitamos a vivir una experiencia de Confort Visual. Descubre cómo pequeños hábitos pueden mejorar tu salud visual.\nTrae tu fórmula y recibe orientación personalizada",
-    cupoMax: 15,
-    sesiones: [
-      { 
-        dia: "14 Abr.", 
-        horarios: [
-          { hora: "7:00 - 7:15 p.m.", actividad: "Confort Visual", location: "Sala 3", cuposDisponibles: 1 },
-          { hora: "7:15 - 7:30 p.m.", actividad: "Confort Visual", location: "Sala 3", cuposDisponibles: 1 },
-          { hora: "7:30 - 7:45 p.m.", actividad: "Confort Visual", location: "Sala 3", cuposDisponibles: 1 },
-          { hora: "7:45 - 8:00 p.m.", actividad: "Confort Visual", location: "Sala 3", cuposDisponibles: 1 }
-        ]
-      },
-      { 
-        dia: "15 Abr.", 
-        horarios: [
-          { hora: "2:00 - 2:15 p.m.", actividad: "Confort Visual", location: "Sala 3", cuposDisponibles: 1 },
-          { hora: "2:15 - 2:30 p.m.", actividad: "Confort Visual", location: "Sala 3", cuposDisponibles: 1 },
-          { hora: "2:30 - 2:45 p.m.", actividad: "Confort Visual", location: "Sala 3", cuposDisponibles: 1 },
-          { hora: "2:45 - 3:00 p.m.", actividad: "Confort Visual", location: "Sala 3", cuposDisponibles: 1 },
-          { hora: "3:00 - 3:15 p.m.", actividad: "Confort Visual", location: "Sala 3", cuposDisponibles: 1 },
-          { hora: "3:15 - 3:30 p.m.", actividad: "Confort Visual", location: "Sala 3", cuposDisponibles: 1 },
-          { hora: "3:30 - 3:45 p.m.", actividad: "Confort Visual", location: "Sala 3", cuposDisponibles: 1 },
-          { hora: "3:45 - 4:00 p.m.", actividad: "Confort Visual", location: "Sala 3", cuposDisponibles: 1 },
-          { hora: "4:00 - 4:15 p.m.", actividad: "Confort Visual", location: "Sala 3", cuposDisponibles: 1 },
-          { hora: "4:15 - 4:30 p.m.", actividad: "Confort Visual", location: "Sala 3", cuposDisponibles: 1 },
-          { hora: "4:30 - 4:45 p.m.", actividad: "Confort Visual", location: "Sala 3", cuposDisponibles: 1 },
-          { hora: "4:45 - 5:00 p.m.", actividad: "Confort Visual", location: "Sala 3", cuposDisponibles: 1 }
-        ]
-      },
-      { 
-        dia: "16 Abr.", 
-        horarios: [
-          { hora: "10:00 - 10:15 a.m.", actividad: "Confort Visual", location: "Sala 3", cuposDisponibles: 1 },
-          { hora: "10:15 - 10:30 a.m.", actividad: "Confort Visual", location: "Sala 3", cuposDisponibles: 1 },
-          { hora: "10:30 - 10:45 a.m.", actividad: "Confort Visual", location: "Sala 3", cuposDisponibles: 1 },
-          { hora: "10:45 - 11:00 a.m.", actividad: "Confort Visual", location: "Sala 3", cuposDisponibles: 1 },
-          { hora: "11:00 - 11:15 a.m.", actividad: "Confort Visual", location: "Sala 3", cuposDisponibles: 1 },
-          { hora: "11:15 - 11:30 a.m.", actividad: "Confort Visual", location: "Sala 3", cuposDisponibles: 1 },
-          { hora: "11:30 - 11:45 a.m.", actividad: "Confort Visual", location: "Sala 3", cuposDisponibles: 1 },
-          { hora: "11:45 - 12:00 m.", actividad: "Confort Visual", location: "Sala 3", cuposDisponibles: 1 },
-          { hora: "12:00 - 12:15 p.m.", actividad: "Confort Visual", location: "Sala 3", cuposDisponibles: 1 },
-          { hora: "12:15 - 12:30 p.m.", actividad: "Confort Visual", location: "Sala 3", cuposDisponibles: 1 },
-          { hora: "12:30 - 12:45 p.m.", actividad: "Confort Visual", location: "Sala 3", cuposDisponibles: 1 },
-          { hora: "12:45 - 1:00 p.m.", actividad: "Confort Visual", location: "Sala 3", cuposDisponibles: 1 }
-        ]
-      }
-    ]
-  },
-
-  // ACTIVIDADES DE ACADEMIA DE LAS ARTES
-  {
-    id: 4,
-    titulo: "Flores de Bach",
-    categoria: "Academia de las Artes",
-    theme: "purple",
-    icon: "Flower",
-    descripcion: "¿Te gustaría explorar cómo las emociones influyen en tu bienestar? Crea una esencia floral personalizada para ti",
-    cupoMax: 12,
-    sesiones: [
-      { 
-        dia: "14 Abr.", 
-        horarios: [
-          { hora: "10:00 a.m. - 12:00 m", actividad: "Flores de Bach", location: "Sala 7", cuposDisponibles: 12 }
-        ]
-      },
-      { 
-        dia: "15 Abr.", 
-        horarios: [
-          { hora: "10:00 a.m. - 12:00 m", actividad: "Flores de Bach", location: "Sala 7", cuposDisponibles: 12 }
-        ]
-      }
-    ]
-  },
-  {
-    id: 5,
-    titulo: "Constelaciones familiares & Collage",
-    categoria: "Academia de las Artes",
-    theme: "purple",
-    icon: "Palette",
-    descripcion: "Desde el arte y el collage exploraremos nuestra historia familiar para abrir nuevas miradas de bienestar. \n¿Qué historias de tu familia siguen influyendo en tu vida hoy?",
-    cupoMax: 15,
-    sesiones: [
-      { 
-        dia: "14 Abr.", 
-        horarios: [
-          { hora: "4:30 - 6:30 p.m.", actividad: "Constelaciones Familiares & Collage", location: "Sala 10", cuposDisponibles: 15 }
-        ]
-      },
-      { 
-        dia: "16 Abr.", 
-        horarios: [
-          { hora: "4:30 - 6:30 p.m.", actividad: "Constelaciones Familiares & Collage", location: "Sala 10", cuposDisponibles: 15 }
-        ]
-      }
-    ]
-  },
-  {
-    id: 6,
-    titulo: "Despierta tus sentidos a través del alimento",
-    categoria: "Academia de las Artes",
-    theme: "purple",
-    icon: "ChefHat",
-    descripcion: "¿Te gustaría vivir una experiencia de degustación? Explora sabores, conecta con los sentidos y redescubre el alimento",
-    cupoMax: 20,
-    sesiones: [
-      { 
-        dia: "16 Abr.", 
-        horarios: [
-          { hora: "9:00 - 10:00 a.m.", actividad: "Despierta tus Sentidos", location: "CocinArte", cuposDisponibles: 20 }
-        ]
-      },
-      { 
-        dia: "17 Abr.", 
-        horarios: [
-          { hora: "9:00 - 10:00 a.m.", actividad: "Despierta tus Sentidos", location: "CocinArte", cuposDisponibles: 20 }
-        ]
-      }
-    ]
-  },
-  {
-    id: 7,
-    titulo: "Documental: Zonas Azules",
-    categoria: "Academia de las Artes",
-    theme: "purple",
-    icon: "Clapperboard",
-    descripcion: "Descubre los secretos de las mujeres y hombres más longevos del mundo. \nProyección con crispetas 🍿",
-    cupoMax: 15,
-    sesiones: [
-      { 
-        dia: "17 Abr.", 
-        horarios: [
-          { hora: "12:00 - 1:00 p.m.", actividad: "Documental Zonas Azules", location: "Sala 10", cuposDisponibles: 12 },
-          { hora: "1:30 - 2:30 p.m.", actividad: "Documental Zonas Azules", location: "Sala 10", cuposDisponibles: 12 }
-        ]
-      }
-    ]
-  },
-  {
-    id: 8,
-    titulo: "Constelaciones familiares",
-    categoria: "Academia de las Artes",
-    theme: "purple",
-    icon: "Handshake",
-    descripcion: "Un espacio para mirar tu historia familiar con respeto y gratitud. Reconoce lo recibido y abre nuevas posibilidades de bienestar en tu vida",
-    cupoMax: 15,
-    sesiones: [
-      { 
-        dia: "14 Abr.", 
-        horarios: [
-          { hora: "7:00 - 8:30 p.m.", actividad: "Constelaciones Familiares", location: "Sala 7", cuposDisponibles: 25 }
-        ]
-      }
-    ]
-  },
-  {
-    id: 9,
-    titulo: "SPA Dormir",
-    categoria: "Academia de las Artes",
-    theme: "purple",
-    icon: "Bed",
-    descripcion: "¿Te regalarías 20 minutos para recargar tu energía? \nDisfruta una siesta guiada y vuelve a tu jornada con mayor bienestar",
-    cupoMax: 12,
-    sesiones: [
-      { 
-        dia: "14 Abr.", 
-        horarios: [
-          { hora: "12:00 - 12:20 p.m.", actividad: "SPA Dormir", cuposDisponibles: 12 },
-          { hora: "12:20 - 12:40 p.m.", actividad: "SPA Dormir", cuposDisponibles: 12 },
-          { hora: "12:40 - 1:00 p.m.", actividad: "SPA Dormir", cuposDisponibles: 12 },
-          { hora: "1:00 - 1:20 p.m.", actividad: "SPA Dormir", cuposDisponibles: 12 },
-          { hora: "1:20 - 1:40 p.m.", actividad: "SPA Dormir", cuposDisponibles: 12 },
-          { hora: "1:40 - 2:00 p.m.", actividad: "SPA Dormir", cuposDisponibles: 12 },
-          { hora: "2:00 - 2:20 p.m.", actividad: "SPA Dormir", cuposDisponibles: 12 },
-          { hora: "2:20 - 2:40 p.m.", actividad: "SPA Dormir", cuposDisponibles: 12 },
-          { hora: "2:40 - 3:00 p.m.", actividad: "SPA Dormir", cuposDisponibles: 12 }
-        ]
-      },
-      { 
-        dia: "15 Abr.", 
-        horarios: [
-          { hora: "12:00 - 12:20 p.m.", actividad: "SPA Dormir", cuposDisponibles: 12 },
-          { hora: "12:20 - 12:40 p.m.", actividad: "SPA Dormir", cuposDisponibles: 12 },
-          { hora: "12:40 - 1:00 p.m.", actividad: "SPA Dormir", cuposDisponibles: 12 },
-          { hora: "1:00 - 1:20 p.m.", actividad: "SPA Dormir", cuposDisponibles: 12 },
-          { hora: "1:20 - 1:40 p.m.", actividad: "SPA Dormir", cuposDisponibles: 12 },
-          { hora: "1:40 - 2:00 p.m.", actividad: "SPA Dormir", cuposDisponibles: 12 },
-          { hora: "2:00 - 2:20 p.m.", actividad: "SPA Dormir", cuposDisponibles: 12 },
-          { hora: "2:20 - 2:40 p.m.", actividad: "SPA Dormir", cuposDisponibles: 12 },
-          { hora: "2:40 - 3:00 p.m.", actividad: "SPA Dormir", cuposDisponibles: 12 }
-        ]
-      },
-      { 
-        dia: "16 Abr.", 
-        horarios: [
-          { hora: "11:20 - 11:40 p.m.", actividad: "SPA Dormir", cuposDisponibles: 12 },
-          { hora: "11:40 - 12:00 p.m.", actividad: "SPA Dormir", cuposDisponibles: 12 },
-          { hora: "12:00 - 12:20 p.m.", actividad: "SPA Dormir", cuposDisponibles: 12 },
-          { hora: "12:20 - 12:40 p.m.", actividad: "SPA Dormir", cuposDisponibles: 12 },
-          { hora: "12:40 - 1:00 p.m.", actividad: "SPA Dormir", cuposDisponibles: 12 },
-          { hora: "1:00 - 1:20 p.m.", actividad: "SPA Dormir", cuposDisponibles: 12 },
-          { hora: "1:20 - 1:40 p.m.", actividad: "SPA Dormir", cuposDisponibles: 12 },
-          { hora: "1:40 - 2:00 p.m.", actividad: "SPA Dormir", cuposDisponibles: 12 },
-          { hora: "2:00 - 2:20 p.m.", actividad: "SPA Dormir", cuposDisponibles: 12 },
-          { hora: "2:20 - 2:40 p.m.", actividad: "SPA Dormir", cuposDisponibles: 12 },
-          { hora: "2:40 - 3:00 p.m.", actividad: "SPA Dormir", cuposDisponibles: 12 }
-        ]
-      },
-      { 
-        dia: "17 Abr.", 
-        horarios: [
-          { hora: "11:20 - 11:40 p.m.", actividad: "SPA Dormir", cuposDisponibles: 12 },
-          { hora: "11:40 - 12:00 p.m.", actividad: "SPA Dormir", cuposDisponibles: 12 },
-          { hora: "12:00 - 12:20 p.m.", actividad: "SPA Dormir", cuposDisponibles: 12 },
-          { hora: "12:20 - 12:40 p.m.", actividad: "SPA Dormir", cuposDisponibles: 12 },
-          { hora: "12:40 - 1:00 p.m.", actividad: "SPA Dormir", cuposDisponibles: 12 },
-          { hora: "1:00 - 1:20 p.m.", actividad: "SPA Dormir", cuposDisponibles: 12 },
-          { hora: "1:20 - 1:40 p.m.", actividad: "SPA Dormir", cuposDisponibles: 12 },
-          { hora: "1:40 - 2:00 p.m.", actividad: "SPA Dormir", cuposDisponibles: 12 },
-          { hora: "2:00 - 2:20 p.m.", actividad: "SPA Dormir", cuposDisponibles: 12 },
-          { hora: "2:20 - 2:40 p.m.", actividad: "SPA Dormir", cuposDisponibles: 12 },
-          { hora: "2:40 - 3:00 p.m.", actividad: "SPA Dormir", cuposDisponibles: 12 }
-        ]
-      }
-    ]
-  },
-  {
-    id: 10,
-    titulo: "Rincón de paz",
-    categoria: "Academia de las Artes",
-    theme: "purple",
-    icon: "Bird",
-    descripcion: "Un espacio para detenerte un momento, respirar y reconectar con tu cuerpo y tu mente. \nVisítalo en cualquier momento del día durante la semana para regalarte una pausa",
-    cupoMax: 15,
-    sesiones: [
-      { 
-        dia: "14 Abr.", 
-        horarios: [
-          { hora: "10:30 a.m - 10:45 a.m.", actividad: "Calma: Paisajes sonoros", descripcion: "¿Te gustaría detenerte unos minutos para relajarte escuchando paisajes sonoros que calman la mente y el cuerpo?", location: "Sala 10", cuposDisponibles: 15 },
-          { hora: "3:00 a.m - 3:15 p.m.", actividad: "Calma: Paisajes sonoros", descripcion: "¿Te gustaría detenerte unos minutos para relajarte escuchando paisajes sonoros que calman la mente y el cuerpo?", location: "Sala 10", cuposDisponibles: 15 },
-          { hora: "", actividad: "Echemos cuento: Lectura silenciosa", descripcion: "¿Te animas a regalarte un momento de lectura en silencio o compartir un libro a través de trueque o donación?", cuposDisponibles: 15 }
-        ]
-      },
-      { 
-        dia: "15 Abr.", 
-        horarios: [
-          { hora: "10:30 a.m - 10:45 a.m.", actividad: "Calma: Paisajes sonoros", descripcion: "¿Te gustaría detenerte unos minutos para relajarte escuchando paisajes sonoros que calman la mente y el cuerpo?", location: "Sala 10", cuposDisponibles: 15 },
-          { hora: "", actividad: "Echemos cuento: Lectura silenciosa", descripcion: "¿Te animas a regalarte un momento de lectura en silencio o compartir un libro a través de trueque o donación?", cuposDisponibles: 15 }
-        ]
-      },
-      { 
-        dia: "16 Abr.", 
-        horarios: [
-          { hora: "3:00 - 3:15 p.m.", actividad: "Calma: Paisajes sonoros", descripcion: "¿Te gustaría detenerte unos minutos para relajarte escuchando paisajes sonoros que calman la mente y el cuerpo?", location: "Sala 10", cuposDisponibles: 15 },
-          { hora: "", actividad: "Echemos cuento: Lectura silenciosa", descripcion: "¿Te animas a regalarte un momento de lectura en silencio o compartir un libro a través de trueque o donación?", cuposDisponibles: 15 }
-        ]
-      },
-      { 
-        dia: "17 Abr.", 
-        horarios: [
-          { hora: "3:00 - 3:15 p.m.", actividad: "Calma: Paisajes sonoros", descripcion: "¿Te gustaría detenerte unos minutos para relajarte escuchando paisajes sonoros que calman la mente y el cuerpo?", location: "Sala 10", cuposDisponibles: 15 },
-          { hora: "", actividad: "Echemos cuento: Lectura silenciosa", descripcion: "¿Te animas a regalarte un momento de lectura en silencio o compartir un libro a través de trueque o donación?", cuposDisponibles: 15 }
-        ]
-      }
-    ]
-  }
-];
-
 const mockInscriptions = [ /* simular datosd de inscripcion adm */ ];
 
 const SessionModal = ({ activity, isOpen, onClose, onSelect, registrations }) => {
@@ -514,6 +264,8 @@ const SessionModal = ({ activity, isOpen, onClose, onSelect, registrations }) =>
         </div>
 
         <div className="p-8">
+          <h3 className="text-xl font-bold mb-4 text-gray-800">{activity.titulo}</h3>
+          
           <div className="date-buttons">
             {uniqueDates.map(date => (
               <button
@@ -537,18 +289,22 @@ const SessionModal = ({ activity, isOpen, onClose, onSelect, registrations }) =>
                       onClick={() => !isFull && onSelect(session)}
                       className={`session-slot ${isFull ? 'full' : ''}`}
                     >
-                      <div className="flex justify-between items-start mb-1">
-                        <span className="session-time">{session.hora}</span>
+                      <div className="flex justify-between items-start mb-2">
+                        <span className="session-time font-semibold text-gray-800">{session.hora}</span>
                       </div>
-                      {session.actividad && (
-                        <div className="text-xs text-gray-600 mb-2">{session.actividad}</div>
-                      )}
-                      {session.descripcion && (
-                        <div className="text-xs text-gray-700 mb-2 italic">{session.descripcion}</div>
-                      )}
+                      
                       {session.location && (
-                        <div className="text-xs text-gray-500 mb-2">{session.location}</div>
+                        <div className="flex items-center text-xs text-gray-600 mb-2">{session.location}</div>
                       )}
+                      
+                      {session.actividad && (
+                        <div className="text-xs text-gray-700 mb-2 font-medium">{session.actividad}</div>
+                      )}
+                      
+                      {session.descripcion && (
+                        <div className="text-xs text-gray-600 mb-2 italic">{session.descripcion}</div>
+                      )}
+                      
                       <div className="flex items-center justify-between mt-auto">
                         <span className={`cupos-tag ${isFull ? 'full' : 'available'}`}>
                           {isFull ? 'AGOTADO' : `${session.cuposDisponibles} CUPO${session.cuposDisponibles !== 1 ? 'S' : ''}`}
@@ -633,13 +389,6 @@ const HomeView = ({ onSelectActivity, actividades, isLoading, loadError }) => {
       {isWelcomeOpen && (
         <div className="welcome-modal-overlay">
           <div className="welcome-modal" role="dialog" aria-modal="true" aria-label="Bienvenida Salud Fest">
-            <button
-              className="welcome-close-btn"
-              onClick={() => setIsWelcomeOpen(false)}
-              aria-label="Cerrar bienvenida"
-            >
-              <X size={20} />
-            </button>
 
             <div className="welcome-header">
               <img src="/sf1.JPG" alt="Salud Fest Logo" className="welcome-logo" />

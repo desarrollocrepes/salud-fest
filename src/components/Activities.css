@@ -35,32 +35,8 @@
   border-radius: 24px;
   padding: 2rem;
   background: linear-gradient(145deg, #ffffff 0%, #f8fbff 100%);
-  border: 1px solid #dbe4ee;
-  box-shadow: 0 30px 60px -30px rgba(15, 23, 42, 0.45);
   position: relative;
   animation: zoomIn 250ms ease-out;
-}
-
-.welcome-close-btn {
-  position: absolute;
-  top: 1rem;
-  right: 1rem;
-  width: 36px;
-  height: 36px;
-  border: none;
-  border-radius: 9999px;
-  background-color: #eef2f7;
-  color: #6b7280;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: all 0.2s;
-}
-
-.welcome-close-btn:hover {
-  background-color: #e5e7eb;
-  color: #111827;
 }
 
 .welcome-header {
@@ -131,21 +107,16 @@
 }
 
 .welcome-cta-btn {
-  border: none;
   border-radius: 14px;
-  padding: 0.9rem 1.25rem;
+  padding: 0.5rem;
   font-size: 0.9rem;
   font-weight: 700;
-  letter-spacing: 0.05em;
   cursor: pointer;
-  color: #fff;
-  background: linear-gradient(120deg, #10b981 0%, #8c89e3 100%);
+  color: #000;
+  background: transparent;
+  border: 1px dashed black;
   transition: transform 0.2s, box-shadow 0.2s;
-}
-
-.welcome-cta-btn:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 10px 20px -10px rgba(16, 185, 129, 0.6);
+  height: 100%;
 }
 
 .activities-container {
