@@ -620,7 +620,7 @@ const ActivityCard = ({ activity, onSelect, isEmerald }) => {
       <h3 className="activity-card-title">{activity.titulo}</h3>
       <div className="activity-card-header">
         <span className={`activity-badge ${isEmerald ? 'emerald' : 'purple'}`}>
-          {activity.categoria === 'Bienestar' ? 'Bienestar' : 'Academia de las Artes'}
+          {isEmerald ? 'Bienestar' : 'Academia de las Artes'}
         </span>
       </div>
       <div className="activity-card-cupos">
@@ -640,12 +640,22 @@ const ActivityCard = ({ activity, onSelect, isEmerald }) => {
 const HomeView = ({ onSelectActivity, actividades, isLoading, loadError }) => {
   const [isWelcomeOpen, setIsWelcomeOpen] = useState(true);
 
-  const actividadesBienestar = useMemo(() => {
-    return actividades.filter(a => a.categoria === 'Bienestar');
+  const actividadesEmerald = useMemo(() => {
+    return actividades.filter((a) => a.theme === 'emerald' || a.categoria === 'Bienestar');
   }, [actividades]);
 
-  const actividadesArtes = useMemo(() => {
-    return actividades.filter(a => a.categoria === 'Academia de las Artes');
+  const actividadesPurpleColumns = useMemo(() => {
+    const purpleActivities = actividades.filter(
+      (a) => !(a.theme === 'emerald' || a.categoria === 'Bienestar')
+    );
+
+    return purpleActivities.reduce(
+      (columns, activity, index) => {
+        columns[index % 3].push(activity);
+        return columns;
+      },
+      [[], [], []]
+    );
   }, [actividades]);
 
   return (
@@ -707,12 +717,12 @@ const HomeView = ({ onSelectActivity, actividades, isLoading, loadError }) => {
 
         <section className="bienestar-section">
           <div className="activities-grid bienestar-grid">
-            {actividadesBienestar.map((activity) => (
+            {actividadesEmerald.map((activity) => (
               <ActivityCard
                 key={activity.id}
                 activity={activity}
                 onSelect={onSelectActivity}
-                isEmerald={activity.theme === 'emerald'}
+                isEmerald
               />
             ))}
           </div>
@@ -720,12 +730,12 @@ const HomeView = ({ onSelectActivity, actividades, isLoading, loadError }) => {
 
         <section className="artes-section artes-section1">
           <div className="activities-grid artes-grid">
-            {actividadesArtes.slice(0, 3).map((activity) => (
+            {actividadesPurpleColumns[0].map((activity) => (
               <ActivityCard
                 key={activity.id}
                 activity={activity}
                 onSelect={onSelectActivity}
-                isEmerald={activity.theme === 'emerald'}
+                isEmerald={false}
               />
             ))}
           </div>
@@ -733,12 +743,12 @@ const HomeView = ({ onSelectActivity, actividades, isLoading, loadError }) => {
 
         <section className="artes-section artes-section2">
           <div className="activities-grid artes-grid">
-            {actividadesArtes.slice(3, 5).map((activity) => (
+            {actividadesPurpleColumns[1].map((activity) => (
               <ActivityCard
                 key={activity.id}
                 activity={activity}
                 onSelect={onSelectActivity}
-                isEmerald={activity.theme === 'emerald'}
+                isEmerald={false}
               />
             ))}
           </div>
@@ -746,12 +756,12 @@ const HomeView = ({ onSelectActivity, actividades, isLoading, loadError }) => {
 
         <section className="artes-section artes-section3">
           <div className="activities-grid artes-grid">
-            {actividadesArtes.slice(5).map((activity) => (
+            {actividadesPurpleColumns[2].map((activity) => (
               <ActivityCard
                 key={activity.id}
                 activity={activity}
                 onSelect={onSelectActivity}
-                isEmerald={activity.theme === 'emerald'}
+                isEmerald={false}
               />
             ))}
           </div>
