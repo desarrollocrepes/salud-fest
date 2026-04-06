@@ -1,51 +1,6 @@
 import './Activities.css';
 import React, { useState, useEffect, useMemo } from 'react';
-import { Check, Palette, Clapperboard, ChefHat, Handshake, Bird, Puzzle, Bed, ArrowLeft, Users, CheckCircle, X, Info, ChevronDown, Apple, Smile, Eye, Flower, Layers, Moon, Rose, Telescope, Utensils, Projector, User, MapPin, Calendar} from 'lucide-react';
-
-const IconMap = {
-  Palette: Palette,
-  Clapperboard: Clapperboard,
-  ChefHat: ChefHat,
-  Handshake: Handshake,
-  Bird: Bird,
-  Puzzle: Puzzle,
-  Bed: Bed, 
-  Apple: Apple,
-  Smile: Smile,
-  Eye: Eye,
-  Flower: Flower,
-  Layers: Layers,
-  Moon: Moon,
-  Rose: Rose,
-  Telescope: Telescope,
-  Utensils: Utensils,
-  Projector: Projector,
-  User: User
-};
-
-const ICON_ALIASES = {
-  apple: 'Apple',
-  smile: 'Smile',
-  eye: 'Eye',
-  flower: 'Flower',
-  palette: 'Palette',
-  chefhat: 'ChefHat',
-  clapperboard: 'Clapperboard',
-  handshake: 'Handshake',
-  bed: 'Bed',
-  bird: 'Bird',
-  puzzle: 'Puzzle',
-  layers: 'Layers',
-  moon: 'Moon',
-  rose: 'Rose',
-  telescope: 'Telescope',
-  utensils: 'Utensils',
-  projector: 'Projector',
-  user: 'User',
-  info: 'Info',
-  chef_hat: 'ChefHat',
-  'chef-hat': 'ChefHat'
-};
+import { Check, ArrowLeft, Users, CheckCircle, X, ChevronDown, MapPin, Calendar } from 'lucide-react';
 
 const STRAPI_BASE_URL = (import.meta.env.VITE_STRAPI_URL || 'https://macfer.crepesywaffles.com').replace(/\/$/, '');
 const STRAPI_ACTIVIDADES_ENDPOINT = import.meta.env.VITE_STRAPI_ACTIVIDADES_ENDPOINT || '/api/sintonizarte-saludfest-academias';
@@ -65,36 +20,53 @@ const getTheme = (theme, categoria) => {
   return getCategoriaLabel(categoria) === 'Bienestar' ? 'emerald' : 'purple';
 };
 
-const normalizeIconCandidate = (value) => {
-  if (!value || typeof value !== 'string') return '';
-  const noExtension = value.replace(/\.[^/.]+$/, '');
-  return noExtension.trim();
+const parseNumericValue = (value, fallback = 0) => {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string') {
+    const parsed = Number(value.trim());
+    return Number.isFinite(parsed) ? parsed : fallback;
+  }
+  return fallback;
 };
 
-const resolveIconKey = (...candidates) => {
-  for (const candidate of candidates) {
-    const iconCandidate = normalizeIconCandidate(candidate);
-    if (!iconCandidate) continue;
+const toAbsoluteMediaUrl = (url) => {
+  if (!url || typeof url !== 'string') return '';
+  if (/^(https?:\/\/|data:|blob:)/i.test(url)) return url;
+  return `${STRAPI_BASE_URL}${url.startsWith('/') ? '' : '/'}${url}`;
+};
 
-    if (IconMap[iconCandidate]) return iconCandidate;
-
-    const normalized = iconCandidate.toLowerCase().replace(/[^a-z0-9_-]/g, '');
-    const aliasMatch = ICON_ALIASES[normalized];
-    if (aliasMatch && IconMap[aliasMatch]) return aliasMatch;
+const recolorSvgDataUri = (iconSrc, colorHex) => {
+  if (!iconSrc || typeof iconSrc !== 'string' || !iconSrc.startsWith('data:image/svg+xml')) {
+    return iconSrc;
   }
 
-  return 'Info';
+  try {
+    if (iconSrc.includes(';base64,')) {
+      const [prefix, base64Payload] = iconSrc.split(';base64,');
+      const decodedSvg = atob(base64Payload);
+      const recoloredSvg = decodedSvg.replace(/currentColor/g, colorHex);
+      return `${prefix};base64,${btoa(recoloredSvg)}`;
+    }
+
+    const [, rawPayload] = iconSrc.split(',');
+    const decodedSvg = decodeURIComponent(rawPayload || '');
+    const recoloredSvg = decodedSvg.replace(/currentColor/g, colorHex);
+    return `data:image/svg+xml,${encodeURIComponent(recoloredSvg)}`;
+  } catch {
+    return iconSrc;
+  }
 };
 
-const getIconName = (rawIcon) => {
-  if (typeof rawIcon === 'string') return resolveIconKey(rawIcon);
+const getIconUrl = (rawIcon) => {
+  if (!rawIcon) return '';
+  if (typeof rawIcon === 'string') return toAbsoluteMediaUrl(rawIcon);
 
-  const iconAttributes = getAttributes(rawIcon?.data);
-  return resolveIconKey(
-    iconAttributes?.alternativeText,
-    iconAttributes?.name,
-    iconAttributes?.caption,
-    iconAttributes?.hash
+  const iconAttributes = getAttributes(rawIcon?.data || rawIcon);
+  return toAbsoluteMediaUrl(
+    iconAttributes?.url ||
+    iconAttributes?.formats?.thumbnail?.url ||
+    iconAttributes?.formats?.small?.url ||
+    ''
   );
 };
 
@@ -112,7 +84,7 @@ const normalizeHorarios = (horarios) => {
       actividad: horario.actividad || '',
       descripcion: horario.descripcion || '',
       location: horario.location || horario.ubicacion || '',
-      cuposDisponibles: Number.isFinite(horario.cuposDisponibles) ? horario.cuposDisponibles : 0
+      cuposDisponibles: parseNumericValue(horario.cuposDisponibles, 0)
     };
   });
 };
@@ -142,15 +114,9 @@ const normalizeActividad = (actividadItem) => {
     titulo: actividad.titulo || 'Actividad sin titulo',
     categoria: getCategoriaLabel(actividad.categoria),
     theme: getTheme(actividad.theme, actividad.categoria),
-    icon: resolveIconKey(
-      actividad.icon,
-      actividad.icono,
-      actividad.iconName,
-      actividad.iconoLucide,
-      getIconName(actividad.icon)
-    ),
+    icon: getIconUrl(actividad.icon || actividad.icono || actividad.iconUrl || actividad.iconURL),
     descripcion: actividad.descripcion || '',
-    cupoMax: Number.isFinite(actividad.cupoMax) ? actividad.cupoMax : 0,
+    cupoMax: parseNumericValue(actividad.cupoMax, 0),
     sesiones: normalizeSesiones(actividad.sesiones)
   };
 };
@@ -534,7 +500,6 @@ const SessionModal = ({ activity, isOpen, onClose, onSelect, registrations }) =>
   if (!isOpen || !activity) return null;
 
   const isEmerald = activity.theme === 'emerald';
-  const ActivityIcon = IconMap[activity.icon] || Info;
   const uniqueDates = (activity.sesiones || []).map(s => s.dia);
   const currentSessionGroup = activity.sesiones && activity.sesiones.find(s => s.dia === activeDate);
   const currentSessions = currentSessionGroup ? currentSessionGroup.horarios : [];
@@ -611,11 +576,16 @@ const SessionModal = ({ activity, isOpen, onClose, onSelect, registrations }) =>
 };
 
 const ActivityCard = ({ activity, onSelect, isEmerald }) => {
-  const ActivityIcon = IconMap[activity.icon] || Info;
+  const themedIcon = recolorSvgDataUri(activity.icon, isEmerald ? '#10b981' : '#a855f7');
+
   return (
     <div className={`activity-card ${isEmerald ? 'emerald' : 'purple'}`}>
       <div className={`activity-card-icon-wrapper ${isEmerald ? 'emerald' : 'purple'}`}>
-        <ActivityIcon size={30} strokeWidth={2} />
+        {themedIcon ? (
+          <img src={themedIcon} alt={activity.titulo} className="activity-card-icon-image" loading="lazy" />
+        ) : (
+          <span className="activity-card-icon-fallback">?</span>
+        )}
       </div>
       <h3 className="activity-card-title">{activity.titulo}</h3>
       <div className="activity-card-header">
@@ -775,7 +745,7 @@ const SaludFestView = ({ selectedActivity, onBackToHome, onSelectSession }) => {
   if (!selectedActivity) return null;
 
   const isEmerald = selectedActivity.theme === 'emerald';
-  const ActivityIcon = IconMap[selectedActivity.icon] || Info;
+  const themedIcon = recolorSvgDataUri(selectedActivity.icon, isEmerald ? '#10b981' : '#a855f7');
 
   return (
     <div className="saludfest-view">
@@ -785,7 +755,11 @@ const SaludFestView = ({ selectedActivity, onBackToHome, onSelectSession }) => {
 
       <div className={`activity-detail ${isEmerald ? 'emerald' : 'purple'}`}>
         <div className={`activity-detail-icon ${isEmerald ? 'emerald' : 'purple'}`}>
-          <ActivityIcon size={100} strokeWidth={1} />
+          {themedIcon ? (
+            <img src={themedIcon} alt={selectedActivity.titulo} className="activity-detail-icon-image" loading="lazy" />
+          ) : (
+            <span className="activity-card-icon-fallback">?</span>
+          )}
         </div>
         <h2 className="activity-detail-title">{selectedActivity.titulo}</h2>
         <p className="activity-detail-description">{selectedActivity.descripcion}</p>

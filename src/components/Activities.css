@@ -212,6 +212,18 @@
   flex-shrink: 0;
 }
 
+.activity-card-icon-image {
+  width: 30px;
+  height: 30px;
+  object-fit: contain;
+}
+
+.activity-card-icon-fallback {
+  font-size: 1.25rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
 .activity-card-icon-wrapper.emerald {
   background-color: #ecfdf5;
   color: #10b981;
@@ -365,6 +377,12 @@
   align-items: center;
   justify-content: center;
   margin: 0 auto 1.5rem;
+}
+
+.activity-detail-icon-image {
+  width: 84px;
+  height: 84px;
+  object-fit: contain;
 }
 
 .activity-detail-icon.emerald {
@@ -539,10 +557,6 @@
 .date-btn:hover {
   opacity: 0.85;
   transform: scale(1.02);
-}
-
-.horarios-section {
-  
 }
 
 .horarios-title {
