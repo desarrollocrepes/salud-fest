@@ -1,6 +1,8 @@
 import './Activities.css';
 import React, { useState, useEffect, useMemo } from 'react';
-import { Check, ArrowLeft, Users, CheckCircle, X, ChevronDown, MapPin, Calendar } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Check, ArrowLeft, Users, CheckCircle, X, ChevronDown, MapPin, Calendar, LogOut, Loader, Shield } from 'lucide-react';
+import Login from './Login';
 
 const STRAPI_BASE_URL = (import.meta.env.VITE_STRAPI_URL || 'https://macfer.crepesywaffles.com').replace(/\/$/, '');
 const STRAPI_ACTIVIDADES_ENDPOINT = import.meta.env.VITE_STRAPI_ACTIVIDADES_ENDPOINT || '/api/sintonizarte-saludfest-academias';
@@ -147,6 +149,8 @@ const normalizeSesiones = (sesiones) => {
 
   // Normalizar cada horario individual
   const horariosNormalizados = sessionItems.flatMap((sessionItem) => {
+    const topLevelId = sessionItem?.id;
+    const topLevelDocumentId = sessionItem?.documentId;
     const session = getAttributes(sessionItem);
     
     // Combinar hora_inicio y hora_fin en formato "HH:MM - HH:MM"
@@ -160,6 +164,7 @@ const normalizeSesiones = (sesiones) => {
     }
     
     return {
+      id: topLevelId || session.id || topLevelDocumentId || session.documentId,
       dia: formatFecha(session.dia || ''),
       diaOriginal: session.dia,
       hora: horaFormato,
@@ -182,6 +187,7 @@ const normalizeSesiones = (sesiones) => {
       };
     }
     sesionesAgrupadas[diaKey].horarios.push({
+      id: horario.id,
       hora: horario.hora,
       actividad: horario.actividad,
       descripcion: horario.descripcion,
@@ -238,14 +244,199 @@ const fetchActividadesFromApi = async () => {
 
 const mockInscriptions = [ /* simular datosd de inscripcion adm */ ];
 
-const SessionModal = ({ activity, isOpen, onClose, onSelect, registrations }) => {
+// Función para guardar inscripción en la API
+const INSCRIPCIONES_API_URL = 'https://macfer.crepesywaffles.com/api/sintonizarte-saludfest-inscripcions';
+
+const saveInscripcion = async (inscripcionData) => {
+  try {
+    console.log('💾 Guardando inscripción con datos:', inscripcionData);
+    const response = await fetch(INSCRIPCIONES_API_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(inscripcionData),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      console.error('Error response:', errorData);
+      throw new Error(
+        errorData?.message || 
+        errorData?.error?.message || 
+        `Error ${response.status}: No fue posible guardar la inscripción`
+      );
+    }
+
+    const result = await response.json();
+    console.log('✅ Respuesta de API al guardar:', result);
+    return result;
+  } catch (error) {
+    throw new Error(error.message || 'Error al guardar la inscripción en el servidor');
+  }
+};
+
+// Obtener inscripciones del usuario desde la API
+const fetchInscripcionesFromApi = async (documentNumber) => {
+  try {
+    // Agregar populate para traer los horarios relacionados
+    const url = new URL(INSCRIPCIONES_API_URL);
+    url.searchParams.append('populate', 'horarios');
+    
+    const response = await fetch(url.toString());
+    
+    if (!response.ok) {
+      throw new Error(`Error ${response.status}: No fue posible cargar las inscripciones`);
+    }
+
+    const payload = await response.json();
+    const inscripciones = Array.isArray(payload?.data) ? payload.data : [];
+    
+    console.log('📡 INSCRIPCIONES CRUDAS desde API:', inscripciones);
+    
+    // Filtrar solo las inscripciones del usuario actual
+    const resultado = inscripciones.filter(ins => {
+      const attr = getAttributes(ins);
+      console.log('🔍 Atributos de inscripción:', attr);
+      return String(attr.documento) === String(documentNumber);
+    });
+    
+    console.log('✅ Inscripciones filtradas:', resultado);
+    return resultado;
+  } catch (error) {
+    console.error('Error al obtener inscripciones:', error);
+    return [];
+  }
+};
+
+// Transformar inscripción de API a formato de reserva para mostrar
+const transformInscripcionToReserva = (inscripcion) => {
+  const attr = getAttributes(inscripcion);
+  console.log('🔄 Transformando inscripción:', attr);
+  
+  // Extraer datos del primer horario relacionado
+  let fecha = '';
+  let hora = '';
+  let location = '';
+  
+  if (attr.horarios && attr.horarios.data && Array.isArray(attr.horarios.data) && attr.horarios.data.length > 0) {
+    const primerHorario = getAttributes(attr.horarios.data[0]);
+    console.log('📅 Primer horario:', primerHorario);
+    
+    // Formatear fecha
+    if (primerHorario.dia) {
+      fecha = formatFecha(primerHorario.dia);
+    }
+    
+    // Formatear hora: combinar hora_inicio y hora_fin
+    if (primerHorario.hora_inicio || primerHorario.hora_fin) {
+      const horaInicio = primerHorario.hora_inicio ? primerHorario.hora_inicio.slice(0, 5) : '';
+      const horaFin = primerHorario.hora_fin ? primerHorario.hora_fin.slice(0, 5) : '';
+      hora = horaFin && horaInicio ? `${horaInicio} - ${horaFin}` : horaInicio;
+    }
+    
+    // Ubicación
+    location = primerHorario.location || '';
+  }
+  
+  const reserva = {
+    id: inscripcion.id || Date.now(),
+    actividad: attr.area || 'Sin actividad',
+    nombre: attr.nombre || '',
+    documento: attr.documento || '',
+    correo: attr.correo || '',
+    telefono: attr.telefono || '',
+    fecha: fecha,
+    hora: hora,
+    location: location,
+    timestamp: attr.publishedAt || attr.createdAt || new Date().toISOString()
+  };
+  console.log('✨ Reserva transformada:', reserva);
+  return reserva;
+};
+
+const SessionModal = ({ activity, isOpen, onClose, onSelect, registrations, usuario, onReservationSuccess }) => {
   const [activeDate, setActiveDate] = useState(null);
+  const [selectedSession, setSelectedSession] = useState(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [errorMsg, setErrorMsg] = useState('');
+  const [successMsg, setSuccessMsg] = useState('');
+  const [showConfirmation, setShowConfirmation] = useState(false);
 
   useEffect(() => {
     if (isOpen && activity && activity.sesiones && activity.sesiones.length > 0) {
       setActiveDate(activity.sesiones[0].dia);
+      setSelectedSession(null);
+      setErrorMsg('');
+      setSuccessMsg('');
+      setShowConfirmation(false);
     }
   }, [isOpen, activity]);
+
+  const handleConfirmInscripcion = async () => {
+    if (!selectedSession) {
+      setErrorMsg('Por favor selecciona un horario');
+      return;
+    }
+
+    if (!usuario) {
+      setErrorMsg('Usuario no autenticado');
+      return;
+    }
+
+    // Mostrar modal de confirmación
+    setShowConfirmation(true);
+  };
+
+  const handleConfirmReservation = async () => {
+    setIsSubmitting(true);
+    setErrorMsg('');
+    setSuccessMsg('');
+
+    try {
+      const inscripcionData = {
+        data: {
+          nombre: usuario.nombre || '',
+          documento: String(usuario.document_number),
+          telefono: usuario.telefono ? parseInt(usuario.telefono) : 0,
+          correo: usuario.correo || '',
+          area: activity.titulo || '',
+          fecha: activeDate || '',
+          hora: selectedSession.hora || '',
+          ubicacion: selectedSession.location || '',
+          horarios: [parseInt(selectedSession.id)],
+        }
+      };
+
+      console.log('Enviando inscripción:', inscripcionData);
+      
+      await saveInscripcion(inscripcionData);
+      
+      setSuccessMsg('¡Inscripción realizada con éxito!');
+      setShowConfirmation(false);
+      
+      // Llamar callback para refrescar reservas desde API
+      if (onReservationSuccess) {
+        await onReservationSuccess();
+      }
+      
+      // Llamar onSelect con la sesión seleccionada
+      onSelect(selectedSession);
+      
+      // Limpiar después de 2 segundos
+      setTimeout(() => {
+        setSelectedSession(null);
+        setSuccessMsg('');
+        setErrorMsg('');
+      }, 2000);
+    } catch (error) {
+      console.error('Error en inscripción:', error);
+      setErrorMsg(error.message || 'Error al realizar la inscripción');
+      setShowConfirmation(false);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
   if (!isOpen || !activity) return null;
 
@@ -254,11 +445,103 @@ const SessionModal = ({ activity, isOpen, onClose, onSelect, registrations }) =>
   const currentSessionGroup = activity.sesiones && activity.sesiones.find(s => s.dia === activeDate);
   const currentSessions = currentSessionGroup ? currentSessionGroup.horarios : [];
 
+  // Modal de confirmación
+  if (showConfirmation && selectedSession) {
+    return (
+      <div className="modal-overlay">
+        <div className="modal-content" style={{ maxWidth: '400px' }}>
+          <div style={{ padding: '2rem', textAlign: 'center' }}>
+            <h3 style={{ fontSize: '1.3rem', fontWeight: '700', marginBottom: '1rem', color: '#111827' }}>
+              Confirmar Reserva
+            </h3>
+            
+            <div style={{ 
+              background: '#f3f4f6', 
+              padding: '1rem', 
+              borderRadius: '12px', 
+              marginBottom: '1.5rem',
+              textAlign: 'left'
+            }}>
+              <p style={{ margin: '0.5rem 0', fontSize: '0.95rem', color: '#374151' }}>
+                <strong>Actividad:</strong> {activity.titulo}
+              </p>
+              <p style={{ margin: '0.5rem 0', fontSize: '0.95rem', color: '#374151' }}>
+                <strong>Fecha:</strong> {activeDate}
+              </p>
+              <p style={{ margin: '0.5rem 0', fontSize: '0.95rem', color: '#374151' }}>
+                <strong>Hora:</strong> {selectedSession.hora}
+              </p>
+              {selectedSession.location && (
+                <p style={{ margin: '0.5rem 0', fontSize: '0.95rem', color: '#374151' }}>
+                  <strong>Ubicación:</strong> {selectedSession.location}
+                </p>
+              )}
+            </div>
+
+            <p style={{ fontSize: '0.95rem', color: '#6b7280', marginBottom: '1.5rem' }}>
+              ¿Estás seguro de que deseas confirmar esta reserva?
+            </p>
+
+            <div style={{ display: 'flex', gap: '1rem' }}>
+              <button
+                onClick={() => setShowConfirmation(false)}
+                disabled={isSubmitting}
+                style={{
+                  flex: 1,
+                  padding: '0.75rem',
+                  border: '1px solid #d1d5db',
+                  borderRadius: '8px',
+                  background: '#fff',
+                  color: '#374151',
+                  fontWeight: '600',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s'
+                }}
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleConfirmReservation}
+                disabled={isSubmitting}
+                style={{
+                  flex: 1,
+                  padding: '0.75rem',
+                  border: 'none',
+                  borderRadius: '8px',
+                  background: isEmerald ? '#10b981' : '#a855f7',
+                  color: '#fff',
+                  fontWeight: '600',
+                  cursor: isSubmitting ? 'not-allowed' : 'pointer',
+                  opacity: isSubmitting ? 0.7 : 1,
+                  transition: 'all 0.2s',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '0.5rem'
+                }}
+              >
+                {isSubmitting ? (
+                  <>
+                    <Loader className="w-4 h-4 animate-spin" /> Guardando...
+                  </>
+                ) : (
+                  <>
+                    <Check className="w-4 h-4" /> Confirmar
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="modal-overlay">
       <div className="modal-content">
         <div className="modal-header">
-          <button onClick={onClose} className="modal-close-btn">
+          <button onClick={onClose} className="modal-close-btn" disabled={isSubmitting}>
             <X className="w-6 h-6 text-gray-400" />
           </button>
         </div>
@@ -272,6 +555,7 @@ const SessionModal = ({ activity, isOpen, onClose, onSelect, registrations }) =>
                 key={date}
                 onClick={() => setActiveDate(date)}
                 className={`date-btn ${activeDate === date ? 'active' : ''} ${isEmerald ? 'emerald' : 'purple'}`}
+                disabled={isSubmitting}
               >
                 {date}
               </button>
@@ -283,11 +567,13 @@ const SessionModal = ({ activity, isOpen, onClose, onSelect, registrations }) =>
               <div className="session-grid">
                 {currentSessions.map((session, idx) => {
                   const isFull = session.cuposDisponibles === 0;
+                  const isSelected = selectedSession?.id === session.id;
                   return (
                     <button
                       key={idx}
-                      onClick={() => !isFull && onSelect(session)}
-                      className={`session-slot ${isFull ? 'full' : ''}`}
+                      onClick={() => !isFull && setSelectedSession(session)}
+                      className={`session-slot ${isFull ? 'full' : ''} ${isSelected ? 'selected' : ''}`}
+                      disabled={isSubmitting}
                     >
                       <div className="flex justify-between items-start mb-2">
                         <span className="session-time font-semibold text-gray-800">{session.hora}</span>
@@ -309,6 +595,7 @@ const SessionModal = ({ activity, isOpen, onClose, onSelect, registrations }) =>
                         <span className={`cupos-tag ${isFull ? 'full' : 'available'}`}>
                           {isFull ? 'AGOTADO' : `${session.cuposDisponibles} CUPO${session.cuposDisponibles !== 1 ? 'S' : ''}`}
                         </span>
+                        {isSelected && <CheckCircle className="w-4 h-4 text-green-500" />}
                       </div>
                     </button>
                   );
@@ -320,10 +607,35 @@ const SessionModal = ({ activity, isOpen, onClose, onSelect, registrations }) =>
               </div>
             )}
           </div>
+
+          {/* Mensajes de error y éxito */}
+          {errorMsg && (
+            <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-md text-red-700 text-sm">
+              {errorMsg}
+            </div>
+          )}
+          {successMsg && (
+            <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded-md text-green-700 text-sm">
+              {successMsg}
+            </div>
+          )}
         </div>
+
         <div className="modal-footer">
-          <button onClick={onClose} className={`confirm-btn ${isEmerald ? '' : 'purple'}`}>
-            CONFIRMAR INSCRIPCIÓN <Check className="w-4 h-4" />
+          <button 
+            onClick={handleConfirmInscripcion} 
+            className={`confirm-btn ${isEmerald ? '' : 'purple'} ${!selectedSession || isSubmitting ? 'opacity-50 cursor-not-allowed' : ''}`}
+            disabled={!selectedSession || isSubmitting}
+          >
+            {isSubmitting ? (
+              <>
+                <Loader className="w-4 h-4 animate-spin" /> GUARDANDO...
+              </>
+            ) : (
+              <>
+                CONFIRMAR INSCRIPCIÓN <Check className="w-4 h-4" />
+              </>
+            )}
           </button>
         </div>
       </div>
@@ -530,6 +842,7 @@ const SaludFestView = ({ selectedActivity, onBackToHome, onSelectSession }) => {
 };
 
 const Activities = () => {
+  const navigate = useNavigate();
   const [currentView, setCurrentView] = useState('home');
   const [selectedActivity, setSelectedActivity] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -537,6 +850,30 @@ const Activities = () => {
   const [actividades, setActividades] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
+  const [usuario, setUsuario] = useState(null);
+  const [misReservas, setMisReservas] = useState([]);
+  const [showMyReservations, setShowMyReservations] = useState(false);
+
+  // Verificar si hay usuario en localStorage al montar
+  useEffect(() => {
+    const usuarioGuardado = localStorage.getItem('usuario');
+    if (usuarioGuardado) {
+      try {
+        const datosUsuario = JSON.parse(usuarioGuardado);
+        setUsuario(datosUsuario);
+        // Cargar reservas desde la API
+        const cargarReservas = async () => {
+          const inscripciones = await fetchInscripcionesFromApi(datosUsuario.document_number);
+          const reservas = inscripciones.map(transformInscripcionToReserva);
+          setMisReservas(reservas);
+        };
+        cargarReservas();
+      } catch (err) {
+        console.error('Error al parsear usuario:', err);
+        localStorage.removeItem('usuario');
+      }
+    }
+  }, []);
 
   useEffect(() => {
     let isMounted = true;
@@ -589,7 +926,15 @@ const Activities = () => {
     setSelectedActivity(null);
   };
 
-  const handleSelectSession = (session) => {
+  const refreshReservasFromApi = async () => {
+    if (usuario) {
+      const inscripciones = await fetchInscripcionesFromApi(usuario.document_number);
+      const reservas = inscripciones.map(transformInscripcionToReserva);
+      setMisReservas(reservas);
+    }
+  };
+
+  const handleSelectSession = async (session) => {
     const newRegistration = {
       id: Date.now(),
       activityId: selectedActivity.id,
@@ -598,11 +943,176 @@ const Activities = () => {
       timestamp: new Date().toLocaleString('es-ES')
     };
     setRegistrations([...registrations, newRegistration]);
+    // Recargar reservas del usuario actual desde la API
+    const inscripciones = await fetchInscripcionesFromApi(usuario.document_number);
+    const reservas = inscripciones.map(transformInscripcionToReserva);
+    setMisReservas(reservas);
     handleCloseModal();
   };
 
+  const handleLoginSuccess = async (userData) => {
+    setUsuario(userData);
+    // Cargar reservas del usuario desde la API
+    const inscripciones = await fetchInscripcionesFromApi(userData.document_number);
+    const reservas = inscripciones.map(transformInscripcionToReserva);
+    setMisReservas(reservas);
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem('usuario');
+    setUsuario(null);
+    setMisReservas([]);
+    setCurrentView('home');
+    setShowMyReservations(false);
+  };
+
+  // Si no hay usuario autenticado, mostrar login
+  if (!usuario) {
+    return <Login onLoginSuccess={handleLoginSuccess} />;
+  }
+
+  // Panel de Mis Reservas
+  if (showMyReservations) {
+    return (
+      <div className="app-wrapper">
+        <div className="user-header">
+          <div className="user-greeting">
+            <h2>Mis Reservas</h2>
+            <p>Bienvenido a Salud Fest</p>
+          </div>
+          <div style={{ display: 'flex', gap: '1rem' }}>
+            <button 
+              className="logout-button" 
+              onClick={() => setShowMyReservations(false)}
+              title="Volver a actividades"
+              style={{ background: 'rgba(255, 255, 255, 0.2)' }}
+            >
+              <ArrowLeft size={20} />
+              <span>Volver</span>
+            </button>
+            <button 
+              className="logout-button" 
+              onClick={handleLogout}
+              title="Cerrar sesión"
+            >
+              <LogOut size={20} />
+              <span>Cerrar sesión</span>
+            </button>
+          </div>
+        </div>
+
+        <div style={{ padding: '2rem', maxWidth: '1200px', margin: '0 auto' }}>
+          {misReservas.length === 0 ? (
+            <div style={{
+              textAlign: 'center',
+              padding: '3rem',
+              background: '#f3f4f6',
+              borderRadius: '12px',
+              color: '#6b7280'
+            }}>
+              <p style={{ fontSize: '1.1rem', marginBottom: '0.5rem' }}>No tienes reservas aún</p>
+              <p style={{ fontSize: '0.9rem' }}>Explora las actividades y haz tu primera reserva</p>
+            </div>
+          ) : (
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))',
+              gap: '1.5rem'
+            }}>
+              {misReservas.map(reserva => (
+                <div key={reserva.id} style={{
+                  background: '#fff',
+                  border: '1px solid #e5e7eb',
+                  borderRadius: '12px',
+                  padding: '1.5rem',
+                  boxShadow: '0 1px 3px rgba(0, 0, 0, 0.1)',
+                  display: 'flex',
+                  flexDirection: 'column'
+                }}>
+                  <h3 style={{ fontSize: '1.1rem', fontWeight: '700', color: '#111827', marginBottom: '1rem' }}>
+                    {reserva.actividad}
+                  </h3>
+
+                  <div style={{ 
+                    background: '#f9fafb',
+                    padding: '1rem',
+                    borderRadius: '8px',
+                    marginBottom: '1rem',
+                    fontSize: '0.9rem',
+                    color: '#374151'
+                  }}>
+                    <p style={{ margin: '0.5rem 0' }}>
+                      <strong>📅 Fecha:</strong> {reserva.fecha}
+                    </p>
+                    <p style={{ margin: '0.5rem 0' }}>
+                      <strong>⏰ Hora:</strong> {reserva.hora}
+                    </p>
+                    {reserva.location && (
+                      <p style={{ margin: '0.5rem 0' }}>
+                        <strong>📍 Ubicación:</strong> {reserva.location}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="app-wrapper">
+      <div className="user-header">
+        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flex: 1, minWidth: 0 }}>
+          {usuario?.foto && (
+            <img 
+              src={usuario.foto} 
+              alt={usuario.nombre}
+              className="user-avatar"
+              onError={(e) => {
+                e.target.style.display = 'none';
+              }}
+            />
+          )}
+          <div className="user-greeting">
+            <h2>¡Hola, <span className="user-name">{usuario.nombre}</span>!</h2>
+            <p>Bienvenido a Salud Fest</p>
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+          {console.log('Debug - document_number:', usuario?.document_number, 'Type:', typeof usuario?.document_number) || null}
+          {String(usuario?.document_number) === '1020741340' && (
+            <button 
+              className="logout-button" 
+              onClick={() => navigate('/admin')}
+              title="Acceder al panel de administración"
+              style={{ background: 'rgba(239, 68, 68, 0.2)', borderColor: 'rgba(239, 68, 68, 0.5)' }}
+            >
+              <Shield size={20} />
+              <span>Panel Admin</span>
+            </button>
+          )}
+          <button 
+            className="logout-button" 
+            onClick={() => setShowMyReservations(true)}
+            title="Ver mis reservas"
+            style={{ background: 'rgba(255, 255, 255, 0.2)' }}
+          >
+            <Check size={20} />
+            <span>Mis Reservas ({misReservas.length})</span>
+          </button>
+          <button 
+            className="logout-button" 
+            onClick={handleLogout}
+            title="Cerrar sesión"
+          >
+            <LogOut size={20} />
+            <span>Cerrar sesión</span>
+          </button>
+        </div>
+      </div>
       <HomeView
         onSelectActivity={handleSelectActivity}
         actividades={actividades}
@@ -615,6 +1125,8 @@ const Activities = () => {
         onClose={handleCloseModal}
         onSelect={handleSelectSession}
         registrations={registrations}
+        usuario={usuario}
+        onReservationSuccess={refreshReservasFromApi}
       />
     </div>
   );

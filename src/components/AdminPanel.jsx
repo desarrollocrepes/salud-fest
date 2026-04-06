@@ -13,8 +13,42 @@ import {
   X
 } from 'lucide-react';
 
+// Obtener inscripciones desde la API
+const fetchInscripciones = async () => {
+  try {
+    const response = await fetch('https://macfer.crepesywaffles.com/api/sintonizarte-saludfest-inscripcions');
+    
+    if (!response.ok) {
+      throw new Error(`Error ${response.status}: No fue posible cargar las inscripciones`);
+    }
+
+    const payload = await response.json();
+    const inscripciones = Array.isArray(payload?.data) ? payload.data : [];
+    
+    // Transformar datos de API al formato esperado
+    return inscripciones.map(item => {
+      const attr = item?.attributes || item || {};
+      return {
+        id: item.id || Date.now(),
+        nombre: attr.nombre || 'Sin nombre',
+        email: attr.correo || attr.email || 'Sin correo',
+        telefono: attr.telefono ? String(attr.telefono) : 'Sin teléfono',
+        documento: attr.documento || '',
+        curso: attr.area || 'Sin actividad',
+        sesion: '',
+        status: 'confirmado',
+        fecha: new Date(attr.createdAt || attr.publishedAt || new Date()),
+        ubicacion: ''
+      };
+    });
+  } catch (error) {
+    console.error('Error al obtener inscripciones:', error);
+    return [];
+  }
+};
+
 const AdminPanel = ({ onBack }) => {
-  // Estado para inscripciones (se conectará a API)
+  // Estado para inscripciones
   const [inscriptions, setInscriptions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -22,23 +56,15 @@ const AdminPanel = ({ onBack }) => {
   const [filterStatus, setFilterStatus] = useState('');
   const [sortConfig, setSortConfig] = useState({ key: 'fecha', direction: 'desc' });
 
-  // Simulación de datos
+  // Cargar inscripciones desde la API
   useEffect(() => {
-    const mockInscriptions = [
-      {
-        id: 1,
-        nombre: 'james',
-        email: 'james@gmail.com',
-        telefono: '123',
-        curso: 'Aliméntate',
-        sesion: 'Martes 14 Abr. - 8:30 a.m.',
-        fecha: new Date('2025-04-01'),
-        ubicacion: 'Sala 1'
-      }
-    ];
+    const loadInscriptions = async () => {
+      const data = await fetchInscripciones();
+      setInscriptions(data);
+      setLoading(false);
+    };
     
-    setInscriptions(mockInscriptions);
-    setLoading(false);
+    loadInscriptions();
   }, []);
 
   // Filtrar y buscar
@@ -110,16 +136,16 @@ const AdminPanel = ({ onBack }) => {
   };
 
   const handleExportCSV = () => {
-    const headers = ['ID', 'Nombre', 'Email', 'Teléfono', 'Curso', 'Sesión', 'Estado', 'Ubicación'];
+    const headers = ['ID', 'Nombre', 'Documento', 'Email', 'Teléfono', 'Curso', 'Sesión', 'Estado'];
     const rows = sortedInscriptions.map(insc => [
       insc.id,
       insc.nombre,
+      insc.documento,
       insc.email,
       insc.telefono,
       insc.curso,
       insc.sesion,
-      insc.status,
-      insc.ubicacion
+      insc.status
     ]);
     
     const csvContent = [
@@ -171,15 +197,6 @@ const AdminPanel = ({ onBack }) => {
 
       {/* Filtros */}
       <div className="filters-section">
-        <div className="search-box">
-          <Search size={20} className="text-gray-400" />
-          <input
-            type="text"
-            placeholder="Buscar por nombre, email o teléfono..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-          />
-        </div>
 
         <div className="filters-group">
           <select 
@@ -191,17 +208,6 @@ const AdminPanel = ({ onBack }) => {
             {courses.map(course => (
               <option key={course} value={course}>{course}</option>
             ))}
-          </select>
-
-          <select 
-            value={filterStatus} 
-            onChange={(e) => setFilterStatus(e.target.value)}
-            className="filter-select"
-          >
-            <option value="">Todos los Estados</option>
-            <option value="confirmado">Confirmado</option>
-            <option value="pendiente">Pendiente</option>
-            <option value="cancelado">Cancelado</option>
           </select>
 
           <button 
@@ -221,11 +227,11 @@ const AdminPanel = ({ onBack }) => {
             <tr>
               <th onClick={() => handleSort('id')}>ID</th>
               <th onClick={() => handleSort('nombre')}>Nombre</th>
+              <th onClick={() => handleSort('documento')}>Documento</th>
               <th onClick={() => handleSort('email')}>Email</th>
               <th onClick={() => handleSort('telefono')}>Teléfono</th>
-              <th onClick={() => handleSort('curso')}>Curso</th>
-              <th onClick={() => handleSort('sesion')}>Sesión</th>
-              <th>Acciones</th>
+              <th onClick={() => handleSort('curso')}>Actividad</th>
+              <th>Fecha Inscripción</th>
             </tr>
           </thead>
           <tbody>
@@ -234,24 +240,20 @@ const AdminPanel = ({ onBack }) => {
                 <tr key={insc.id}>
                   <td className="font-medium">#{insc.id}</td>
                   <td className="font-medium text-gray-900">{insc.nombre}</td>
-                  <td className="text-gray-600">{insc.email}</td>
-                  <td className="text-gray-600">{insc.telefono}</td>
+                  <td className="font-mono text-sm text-gray-600">{insc.documento}</td>
+                  <td className="text-gray-600 text-sm">{insc.email}</td>
+                  <td className="text-gray-600 text-sm">{insc.telefono}</td>
                   <td>
-                    <span className="inline-block px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm font-medium">
+                    <span className="inline-block px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-xs font-medium whitespace-nowrap">
                       {insc.curso}
                     </span>
                   </td>
-                  <td className="text-sm text-gray-600">{insc.sesion}</td>
-                  <td>
-                    <button className="action-btn" title="Ver detalles">
-                      Ver
-                    </button>
-                  </td>
+                  <td className="text-sm text-gray-600">{insc.fecha.toLocaleDateString('es-ES')}</td>
                 </tr>
               ))
             ) : (
               <tr>
-                <td colSpan="8" className="text-center py-8 text-gray-500">
+                <td colSpan="7" className="text-center py-8 text-gray-500">
                   No hay inscripciones que coincidan con los filtros
                 </td>
               </tr>
