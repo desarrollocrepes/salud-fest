@@ -272,6 +272,10 @@ const saveInscripcion = async (inscripcionData) => {
 
     const result = await response.json();
     console.log('✅ Respuesta de API al guardar:', result);
+    
+    // Pequeno delay para asegurar que la API procesa la inscripción
+    await new Promise(resolve => setTimeout(resolve, 500));
+    
     return result;
   } catch (error) {
     throw new Error(error.message || 'Error al guardar la inscripción en el servidor');
@@ -281,9 +285,11 @@ const saveInscripcion = async (inscripcionData) => {
 // Obtener inscripciones del usuario desde la API
 const fetchInscripcionesFromApi = async (documentNumber) => {
   try {
-    // Agregar populate para traer los horarios relacionados
+    // Agregar populate para traer los horarios relacionados con todos sus campos
     const url = new URL(INSCRIPCIONES_API_URL);
-    url.searchParams.append('populate', 'horarios');
+    url.searchParams.append('populate', '*');
+    
+    console.log('🔗 Fetch URL:', url.toString());
     
     const response = await fetch(url.toString());
     
@@ -299,11 +305,11 @@ const fetchInscripcionesFromApi = async (documentNumber) => {
     // Filtrar solo las inscripciones del usuario actual
     const resultado = inscripciones.filter(ins => {
       const attr = getAttributes(ins);
-      console.log('🔍 Atributos de inscripción:', attr);
+      console.log('🔍 Comparando documento - Usuario:', String(documentNumber), 'Inscripción:', String(attr.documento), 'Iguales:', String(attr.documento) === String(documentNumber));
       return String(attr.documento) === String(documentNumber);
     });
     
-    console.log('✅ Inscripciones filtradas:', resultado);
+    console.log('✅ Inscripciones filtradas del usuario:', resultado);
     return resultado;
   } catch (error) {
     console.error('Error al obtener inscripciones:', error);
@@ -357,6 +363,128 @@ const transformInscripcionToReserva = (inscripcion) => {
   return reserva;
 };
 
+// Validar que no haya duplicados del mismo taller el mismo día
+const validateDuplicateWorkshop = async (usuario, activity, activeDate) => {
+  if (!usuario || !activity) return null;
+  
+  try {
+    const inscripciones = await fetchInscripcionesFromApi(usuario.document_number);
+    
+    console.log('🔍 Validando duplicado - Inscripciones del usuario:', inscripciones);
+    console.log('🔍 Buscando duplicado - Taller:', activity.titulo, 'Fecha:', activeDate);
+    
+    // Buscar inscripciones del mismo taller en la misma fecha
+    const duplicado = inscripciones.find(ins => {
+      const attr = getAttributes(ins);
+      console.log('🔍 Verificando inscripción - Area:', attr.area, 'Fecha:', attr.fecha);
+      
+      // Comparar área (taller)
+      if (attr.area !== activity.titulo) {
+        console.log('  ❌ Área no coincide:', attr.area, '!=', activity.titulo);
+        return false;
+      }
+      
+      console.log('  📅 Comparando fechas - Inscripción:', attr.fecha, '== Seleccionada:', activeDate);
+      
+      // Comparar fecha directamente del campo fecha de la inscripción
+      if (attr.fecha !== activeDate) {
+        console.log('  ❌ Fecha no coincide');
+        return false;
+      }
+      
+      console.log('  ✅ DUPLICADO ENCONTRADO!');
+      return true;
+    });
+    
+    if (duplicado) {
+      return {
+        existe: true,
+        mensaje: `Ya estás inscrito a "${activity.titulo}" el ${activeDate}. No puedes inscribirte nuevamente el mismo día.`
+      };
+    }
+    
+    return { existe: false };
+  } catch (error) {
+    console.error('Error validando duplicado:', error);
+    return null;
+  }
+};
+
+// Validar conflicto de horarios entre talleres
+const validateTimeConflict = async (usuario, selectedSession, activeDate) => {
+  if (!usuario || !selectedSession) return null;
+  
+  try {
+    const inscripciones = await fetchInscripcionesFromApi(usuario.document_number);
+    
+    console.log('🕐 Validando conflicto - Inscripciones:', inscripciones);
+    console.log('🕐 Nuevo horario - Hora:', selectedSession.hora, 'Fecha:', activeDate);
+    
+    // Extraer horas del horario seleccionado
+    const [horaInicio, horaFin] = selectedSession.hora.split(' - ').map(h => h.trim());
+    
+    console.log('🕐 Horario a reservar - Inicio:', horaInicio, 'Fin:', horaFin);
+    
+    // Buscar conflictos de horario el mismo día
+    for (const ins of inscripciones) {
+      const attr = getAttributes(ins);
+      
+      console.log('🕐 Inscripción existente - Fecha:', attr.fecha, 'Hora:', attr.hora);
+      
+      // Solo revisar inscripciones del mismo día
+      if (attr.fecha !== activeDate) {
+        console.log('  ❌ Fecha diferente, sin conflicto');
+        continue;
+      }
+      
+      // Extraer horas del horario existente
+      const [existHoraInicio, existHoraFin] = (attr.hora || '').split(' - ').map(h => h.trim());
+      
+      if (!existHoraInicio || !horaInicio) {
+        console.log('  ⚠️ No hay horas para comparar');
+        continue;
+      }
+      
+      // Comparar horarios: convertir a minutos para facilitar comparación
+      const toMinutes = (time) => {
+        const parts = time.split(':');
+        if (parts.length !== 2) return null;
+        const [h, m] = parts.map(Number);
+        const result = h * 60 + m;
+        console.log(`    Convertiendo ${time} -> ${result} minutos`);
+        return result;
+      };
+      
+      try {
+        const nuevoInicio = toMinutes(horaInicio);
+        const nuevoFin = toMinutes(horaFin || horaInicio);
+        const existInicio = toMinutes(existHoraInicio);
+        const existFin = toMinutes(existHoraFin || existHoraInicio);
+        
+        console.log('  ⏱️ En minutos - Nuevo: [', nuevoInicio, '-', nuevoFin, '] Existente: [', existInicio, '-', existFin, ']');
+        
+        // Verificar si hay solapamiento: 
+        // Hay conflicto si: nuevo_inicio < existe_fin AND nuevo_fin > existe_inicio
+        if (nuevoInicio < existFin && nuevoFin > existInicio) {
+          console.log('  ✅ CONFLICTO ENCONTRADO!');
+          return {
+            existe: true,
+            mensaje: `Conflicto de horario: Ya tienes una inscripción a las ${existHoraInicio}${existHoraFin ? ` - ${existHoraFin}` : ''} el ${activeDate}. No puedes reservar un taller que se cruce con este horario.`
+          };
+        }
+        console.log('  ✅ Sin conflicto');
+      } catch (e) {
+        console.error('Error comparando horarios:', e);
+      }
+    }
+    
+    return { existe: false };
+  } catch (error) {
+    console.error('Error validando conflicto de horario:', error);
+    return null;
+  }
+};
+
 const SessionModal = ({ activity, isOpen, onClose, onSelect, registrations, usuario, onReservationSuccess }) => {
   const [activeDate, setActiveDate] = useState(null);
   const [selectedSession, setSelectedSession] = useState(null);
@@ -396,6 +524,47 @@ const SessionModal = ({ activity, isOpen, onClose, onSelect, registrations, usua
     setSuccessMsg('');
 
     try {
+      console.log('================================');
+      console.log('🚀 INICIANDO VALIDACIONES');
+      console.log('================================');
+      console.log('Usuario:', usuario?.document_number, usuario?.nombre);
+      console.log('Actividad:', activity?.titulo);
+      console.log('Fecha:', activeDate);
+      console.log('Sesión:', selectedSession?.hora);
+      
+      // ✅ VALIDACIÓN 1: Verificar duplicado del mismo taller el mismo día
+      console.log('\n📍 VALIDACIÓN 1: DUPLICADO');
+      console.log('----------------------------');
+      const duplicadoCheck = await validateDuplicateWorkshop(usuario, activity, activeDate);
+      console.log('Resultado:', duplicadoCheck);
+      
+      if (duplicadoCheck?.existe) {
+        console.log('❌ DUPLICADO DETECTADO');
+        setErrorMsg(duplicadoCheck.mensaje);
+        setShowConfirmation(false);
+        setIsSubmitting(false);
+        return;
+      }
+      console.log('✅ SIN DUPLICADO');
+      
+      // ✅ VALIDACIÓN 2: Verificar conflicto de horarios
+      console.log('\n📍 VALIDACIÓN 2: CONFLICTO HORARIO');
+      console.log('-----------------------------------');
+      const conflictoCheck = await validateTimeConflict(usuario, selectedSession, activeDate);
+      console.log('Resultado:', conflictoCheck);
+      
+      if (conflictoCheck?.existe) {
+        console.log('❌ CONFLICTO DETECTADO');
+        setErrorMsg(conflictoCheck.mensaje);
+        setShowConfirmation(false);
+        setIsSubmitting(false);
+        return;
+      }
+      console.log('✅ SIN CONFLICTO');
+      
+      // ✅ Si pasó todas las validaciones, proceder con la inscripción
+      console.log('\n📍 GUARDANDO INSCRIPCIÓN');
+      console.log('------------------------');
       const inscripcionData = {
         data: {
           nombre: usuario.nombre || '',
@@ -410,10 +579,12 @@ const SessionModal = ({ activity, isOpen, onClose, onSelect, registrations, usua
         }
       };
 
-      console.log('Enviando inscripción:', inscripcionData);
+      console.log('✅ Datos a guardar:', inscripcionData);
+      console.log('💾 Guardando en API...');
       
       await saveInscripcion(inscripcionData);
       
+      console.log('✅ INSCRIPCIÓN GUARDADA EXITOSAMENTE');
       setSuccessMsg('¡Inscripción realizada con éxito!');
       setShowConfirmation(false);
       
@@ -433,11 +604,12 @@ const SessionModal = ({ activity, isOpen, onClose, onSelect, registrations, usua
         onClose();
       }, 2000);
     } catch (error) {
-      console.error('Error en inscripción:', error);
+      console.error('❌ Error en inscripción:', error);
       setErrorMsg(error.message || 'Error al realizar la inscripción');
       setShowConfirmation(false);
     } finally {
       setIsSubmitting(false);
+      console.log('================================\n');
     }
   };
 
@@ -457,6 +629,24 @@ const SessionModal = ({ activity, isOpen, onClose, onSelect, registrations, usua
             <h3 style={{ fontSize: '1.3rem', fontWeight: '700', marginBottom: '1rem', color: '#111827' }}>
               Confirmar Reserva
             </h3>
+            
+            {errorMsg && (
+              <div style={{
+                background: '#fee2e2',
+                border: '1px solid #fca5a5',
+                padding: '1rem',
+                borderRadius: '8px',
+                marginBottom: '1.5rem',
+                color: '#dc2626',
+                fontSize: '0.95rem',
+                display: 'flex',
+                alignItems: 'flex-start',
+                gap: '0.5rem'
+              }}>
+                <X className="w-5 h-5 flex-shrink-0 mt-0.5" style={{ color: '#dc2626' }} />
+                <span>{errorMsg}</span>
+              </div>
+            )}
             
             <div style={{ 
               background: '#f3f4f6', 
@@ -505,7 +695,7 @@ const SessionModal = ({ activity, isOpen, onClose, onSelect, registrations, usua
               </button>
               <button
                 onClick={handleConfirmReservation}
-                disabled={isSubmitting}
+                disabled={isSubmitting || !!errorMsg}
                 style={{
                   flex: 1,
                   padding: '0.75rem',
@@ -514,8 +704,8 @@ const SessionModal = ({ activity, isOpen, onClose, onSelect, registrations, usua
                   background: isEmerald ? '#10b981' : '#a855f7',
                   color: '#fff',
                   fontWeight: '600',
-                  cursor: isSubmitting ? 'not-allowed' : 'pointer',
-                  opacity: isSubmitting ? 0.7 : 1,
+                  cursor: (isSubmitting || !!errorMsg) ? 'not-allowed' : 'pointer',
+                  opacity: (isSubmitting || !!errorMsg) ? 0.7 : 1,
                   transition: 'all 0.2s',
                   display: 'flex',
                   alignItems: 'center',
@@ -556,7 +746,11 @@ const SessionModal = ({ activity, isOpen, onClose, onSelect, registrations, usua
             {uniqueDates.map(date => (
               <button
                 key={date}
-                onClick={() => setActiveDate(date)}
+                onClick={() => {
+                  setActiveDate(date);
+                  setErrorMsg(''); // Limpiar errores al cambiar fecha
+                  setSelectedSession(null);
+                }}
                 className={`date-btn ${activeDate === date ? 'active' : ''} ${isEmerald ? 'emerald' : 'purple'}`}
                 disabled={isSubmitting}
               >
@@ -574,7 +768,10 @@ const SessionModal = ({ activity, isOpen, onClose, onSelect, registrations, usua
                   return (
                     <button
                       key={idx}
-                      onClick={() => !isFull && setSelectedSession(session)}
+                      onClick={() => {
+                        !isFull && setSelectedSession(session);
+                        setErrorMsg(''); // Limpiar errores al seleccionar nuevo horario
+                      }}
                       className={`session-slot ${isFull ? 'full' : ''} ${isSelected ? 'selected' : ''}`}
                       disabled={isSubmitting}
                     >
@@ -705,10 +902,7 @@ const HomeView = ({ onSelectActivity, actividades, isLoading, loadError }) => {
           <div className="welcome-modal" role="dialog" aria-modal="true" aria-label="Bienvenida Salud Fest">
 
             <div className="welcome-header">
-              <img src="/sf1.JPG" alt="Salud Fest Logo" className="welcome-logo" />
-              <div>
-                <h1 className="welcome-title">SALUD FEST 2026</h1>
-              </div>
+              <img src="/sf.jpeg" alt="Salud Fest Logo" className="welcome-logo" />
             </div>
 
             <div className="welcome-info-row">

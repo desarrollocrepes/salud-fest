@@ -67,7 +67,7 @@ const Login = ({ onLoginSuccess }) => {
       const usuarioData = {
         id: empleado.id,
         document_number: empleado.document_number,
-        nombre: empleado.nombre || 'Usuario',
+        nombre: (empleado.nombre || 'Usuario').split(' ')[0],
         correo: empleado.correo || '',
         cargo: empleado.cargo || '',
         telefono: empleado.telefono || empleado.phone || '',

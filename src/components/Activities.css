@@ -131,16 +131,10 @@
 }
 
 .welcome-logo {
-  width: clamp(64px, 15vw, 88px);
-  height: clamp(64px, 15vw, 88px);
+  width: clamp(30%, 20vw, 100px);
+  height: clamp(30%, 20vw, 100px);
   object-fit: contain;
   flex-shrink: 0;
-}
-
-.welcome-title {
-  font-size: clamp(1.75rem, 6vw, 3.2rem);
-  font-weight: 800;
-  margin-bottom: 0.2rem;
 }
 
 .welcome-info-row {
@@ -924,8 +918,10 @@
   }
 
   .welcome-logo {
-    width: 64px;
-    height: 64px;
+    justify-content: center;
+    display: flex;
+    margin: auto;
+    display: block;
   }
 
   .welcome-title {

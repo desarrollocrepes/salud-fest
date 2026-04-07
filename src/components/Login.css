@@ -14,7 +14,7 @@
   background-color: #fff;
   border-radius: 12px;
   padding: clamp(1.5rem, 5vw, 2.5rem);
-  border: #00000055 1px dashed;
+  border: #00000055 1px solid;
 }
 
 @media (max-width: 480px) {
@@ -28,16 +28,10 @@
   text-align: center;
 }
 
-.login-title {
-  font-size: clamp(1.75rem, 5vw, 2.5rem);
-  font-weight: 900;
-  color: #000;
-}
-
 .login-form { 
   display: flex;
   flex-direction: column;
-  gap: 1.5rem;
+  gap: 0.5rem;
 }
 
 .form-group {
@@ -48,13 +42,12 @@
 
 .form-label {
   font-size: 0.9rem;
-  font-weight: 600;
   color: #000;
 }
 
 .form-input {
   padding: 0.875rem 1rem;
-  border: 1px dashed #000;
+  border: 1px dashed #0000005c;
   border-radius: 12px;
   font-size: 1rem;
   font-family: 'DM Sans', sans-serif;
@@ -63,8 +56,7 @@
 
 .form-input:focus {
   outline: none;
-  border-color: #000;
-  box-shadow: 0 0 0 3px #00000010;
+  border: dashed  1px;
 }
 
 .form-input:disabled {
@@ -92,7 +84,7 @@
 @keyframes slideDown {
   from {
     opacity: 0;
-    transform: translateY(-10px);
+    transform: translateY(-50px);
   }
   to {
     opacity: 1;
