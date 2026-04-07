@@ -16,12 +16,11 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 1.5rem 2rem;
-  background: #a855f7 ;
-  color: white;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 0.5rem 2rem;
+  color: black;
   margin-bottom: 2rem;
-  border-radius: 0 0 16px 16px;
+  border-radius: 0 0 50px 50px;
+  border-bottom: #00000074 1px dashed;
   flex-wrap: wrap;
   gap: 1rem;
 }
@@ -39,7 +38,7 @@
   flex-direction: column;
   gap: 0.25rem;
   flex: 1;
-  min-width: 200px;
+  min-width: fit-content;
 }
 
 .user-greeting h2 {
@@ -62,33 +61,23 @@
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  padding: 0.75rem 1.5rem;
+  padding: 0.7rem 1rem;
   color: black;
-  border: 1px solid rgba(255, 255, 255, 0.3);
+  border: solid transparent;
   border-radius: 12px;
   font-size: 0.9rem;
   font-weight: 600;
   cursor: pointer;
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   font-family: 'DM Sans', sans-serif;
-  white-space: nowrap;
 }
 
 .logout-button:hover {
-  background: rgba(255, 255, 255, 0.3);
-  border-color: rgba(255, 255, 255, 0.5);
   transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
 }
 
 .logout-button:active {
   transform: translateY(0);
-}
-
-.logout-button svg {
-  width: 20px;
-  height: 20px;
-  flex-shrink: 0;
 }
 
 /* HOME VIEW */
@@ -116,17 +105,20 @@
 
 .welcome-modal {
   width: 100%;
-  max-width: 780px;
-  border-radius: 24px;
+  width: 30%;
+  border-radius: 12px;
   padding: clamp(1.25rem, 5vw, 2rem);
-  background: linear-gradient(145deg, #ffffff 0%, #f8fbff 100%);
+  background-color: #fff;
   position: relative;
   animation: zoomIn 250ms ease-out;
 }
 
 .welcome-header {
   display: flex;
+  flex-direction: column;
   align-items: center;
+  justify-content: center;
+  display: flex;
   gap: 1rem;
   margin-bottom: 1rem;
 }
@@ -141,15 +133,7 @@
 .welcome-title {
   font-size: clamp(1.75rem, 6vw, 3.2rem);
   font-weight: 800;
-  color: rgb(140, 137, 227);
   margin-bottom: 0.2rem;
-  line-height: 1.1;
-}
-
-.welcome-subtitle {
-  font-size: clamp(0.85rem, 2vw, 1rem);
-  color: #64748b;
-  font-weight: 500;
 }
 
 .welcome-info-row {
@@ -157,6 +141,7 @@
   gap: 1rem;
   flex-wrap: wrap;
   margin-bottom: 1rem;
+  justify-content: center;
 }
 
 .welcome-info-item {
@@ -164,10 +149,9 @@
   align-items: center;
   gap: 0.5rem;
   font-size: clamp(0.8rem, 2vw, 0.95rem);
-  color: #6b7280;
+  color: #000000;
   font-weight: 600;
-  background-color: #eef7ff;
-  border: 1px solid #d6e6f8;
+  border: 1px dashed #0000003a;
   border-radius: 9999px;
   padding: 0.5rem 0.85rem;
   white-space: nowrap;
@@ -175,17 +159,16 @@
 
 .info-icon {
   flex-shrink: 0;
-  color: #10b981;
+  color: #000;
   width: 18px;
   height: 18px;
 }
 
 .welcome-description {
   font-size: clamp(0.9rem, 2.5vw, 1.05rem);
-  color: #475569;
+  color: #000;
   margin-bottom: 1.4rem;
   text-align: left;
-  line-height: 1.6;
 }
 
 .subtitle-highlight {
@@ -199,10 +182,9 @@
   font-weight: 700;
   cursor: pointer;
   color: #000;
-  background: transparent;
-  border: 1px dashed black;
-  transition: transform 0.2s, box-shadow 0.2s;
-  height: 100%;
+  border: 1px solid black;
+  background-color: transparent;
+  width: 100%;
 }
 
 .activities-container {
@@ -698,9 +680,8 @@
 }
 
 .session-slot.selected {
-  border-color: #10b981;
-  background-color: #ecfdf5;
-  border-style: solid;
+  border-color: #000;
+  border: 1px solid;
 }
 
 .session-time {

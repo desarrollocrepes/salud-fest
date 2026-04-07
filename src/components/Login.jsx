@@ -89,7 +89,7 @@ const Login = ({ onLoginSuccess }) => {
     <div className="login-container">
       <div className="login-card">
         <div className="login-header">
-          <h1 className="login-title">Salud Fest</h1>
+          <img src="/sf.jpeg" alt="Salud Fest Logo" className="login-logo" width="50%" height="50%" />
         </div>
 
         <form onSubmit={handleSubmit} className="login-form">
@@ -127,7 +127,6 @@ const Login = ({ onLoginSuccess }) => {
           >
             {isLoading ? (
               <>
-                <Loader size={18} className="spinner" />
                 <span>Verificando...</span>
               </>
             ) : (

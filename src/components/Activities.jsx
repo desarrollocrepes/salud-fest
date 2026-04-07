@@ -1,7 +1,7 @@
 import './Activities.css';
 import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Check, ArrowLeft, Users, CheckCircle, X, ChevronDown, MapPin, Calendar, LogOut, Loader, Shield } from 'lucide-react';
+import { Check, ArrowLeft, Users, CheckCircle, X, ChevronDown, MapPin, Calendar, LogOut, Loader, UserStar } from 'lucide-react';
 import Login from './Login';
 
 const STRAPI_BASE_URL = (import.meta.env.VITE_STRAPI_URL || 'https://macfer.crepesywaffles.com').replace(/\/$/, '');
@@ -34,10 +34,10 @@ const parseNumericValue = (value, fallback = 0) => {
 const formatFecha = (fechaStr) => {
   if (!fechaStr || typeof fechaStr !== 'string') return '';
   
-  // Si ya tiene formato "14 Abr." devolver como está
-  if (/^\d{1,2}\s+\w+\.$/.test(fechaStr)) return fechaStr;
+  // Si ya tiene formato "Martes 14 abril" devolver como está
+  if (/^[A-Z]\w+\s+\d{1,2}\s+\w+$/.test(fechaStr)) return fechaStr;
   
-  // Convertir "04/14/2026" o "2026-04-14" a "14 Abr."
+  // Convertir "04/14/2026" o "2026-04-14" a "Martes 14 abril"
   let date;
   if (fechaStr.includes('-')) {
     // ISO format "2026-04-14"
@@ -61,10 +61,12 @@ const formatFecha = (fechaStr) => {
   
   if (!date || isNaN(date.getTime())) return fechaStr;
   
-  const meses = ['Ene.', 'Feb.', 'Mar.', 'Abr.', 'May.', 'Jun.', 'Jul.', 'Ago.', 'Sep.', 'Oct.', 'Nov.', 'Dic.'];
+  const diasSemana = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
+  const meses = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+  const diaSemana = diasSemana[date.getDay()];
   const dia = date.getDate();
   const mes = meses[date.getMonth()];
-  return `${dia} ${mes}`;
+  return `${diaSemana} ${dia} ${mes}`;
 };
 
 const toAbsoluteMediaUrl = (url) => {
@@ -415,7 +417,7 @@ const SessionModal = ({ activity, isOpen, onClose, onSelect, registrations, usua
       setSuccessMsg('¡Inscripción realizada con éxito!');
       setShowConfirmation(false);
       
-      // Llamar callback para refrescar reservas desde API
+      // Llamar callback para refrescar reservas y actividades desde API
       if (onReservationSuccess) {
         await onReservationSuccess();
       }
@@ -423,11 +425,12 @@ const SessionModal = ({ activity, isOpen, onClose, onSelect, registrations, usua
       // Llamar onSelect con la sesión seleccionada
       onSelect(selectedSession);
       
-      // Limpiar después de 2 segundos
+      // Cerrar el modal después de 2 segundos
       setTimeout(() => {
         setSelectedSession(null);
         setSuccessMsg('');
         setErrorMsg('');
+        onClose();
       }, 2000);
     } catch (error) {
       console.error('Error en inscripción:', error);
@@ -595,7 +598,6 @@ const SessionModal = ({ activity, isOpen, onClose, onSelect, registrations, usua
                         <span className={`cupos-tag ${isFull ? 'full' : 'available'}`}>
                           {isFull ? 'AGOTADO' : `${session.cuposDisponibles} CUPO${session.cuposDisponibles !== 1 ? 'S' : ''}`}
                         </span>
-                        {isSelected && <CheckCircle className="w-4 h-4 text-green-500" />}
                       </div>
                     </button>
                   );
@@ -706,7 +708,6 @@ const HomeView = ({ onSelectActivity, actividades, isLoading, loadError }) => {
               <img src="/sf1.JPG" alt="Salud Fest Logo" className="welcome-logo" />
               <div>
                 <h1 className="welcome-title">SALUD FEST 2026</h1>
-                <p className="welcome-subtitle">Vive una semana para reconectar contigo</p>
               </div>
             </div>
 
@@ -717,12 +718,12 @@ const HomeView = ({ onSelectActivity, actividades, isLoading, loadError }) => {
               </div>
               <div className="welcome-info-item">
                 <Calendar size={18} className="info-icon" />
-                <span>Martes 14 - Viernes 17 de Abril</span>
+                <span>14 - 17 de Abril</span>
               </div>
             </div>
 
             <p className="welcome-description">
-              Explora las actividades y reserva tu lugar en las experiencias que te gustaría vivir.
+              Explora las actividades y reserva tu lugar en las experiencias que te gustaría vivir
               <span className="subtitle-highlight"> <br></br>¡Puedes inscribirte en tantas como quieras!</span>
             </p>
 
@@ -928,9 +929,26 @@ const Activities = () => {
 
   const refreshReservasFromApi = async () => {
     if (usuario) {
+      // Recargar reservas del usuario
       const inscripciones = await fetchInscripcionesFromApi(usuario.document_number);
       const reservas = inscripciones.map(transformInscripcionToReserva);
       setMisReservas(reservas);
+      
+      // Recargar actividades para actualizar cuposDisponibles
+      try {
+        const activitiesFromApi = await fetchActividadesFromApi();
+        setActividades(activitiesFromApi);
+        
+        // Si hay un selectedActivity, actualizar con los datos nuevos
+        if (selectedActivity) {
+          const actividadActualizada = activitiesFromApi.find(a => a.id === selectedActivity.id);
+          if (actividadActualizada) {
+            setSelectedActivity(actividadActualizada);
+          }
+        }
+      } catch (error) {
+        console.error('Error al recargar actividades:', error);
+      }
     }
   };
 
@@ -978,17 +996,14 @@ const Activities = () => {
         <div className="user-header">
           <div className="user-greeting">
             <h2>Mis Reservas</h2>
-            <p>Bienvenido a Salud Fest</p>
           </div>
           <div style={{ display: 'flex', gap: '1rem' }}>
             <button 
               className="logout-button" 
               onClick={() => setShowMyReservations(false)}
               title="Volver a actividades"
-              style={{ background: 'rgba(255, 255, 255, 0.2)' }}
             >
               <ArrowLeft size={20} />
-              <span>Volver</span>
             </button>
             <button 
               className="logout-button" 
@@ -996,7 +1011,6 @@ const Activities = () => {
               title="Cerrar sesión"
             >
               <LogOut size={20} />
-              <span>Cerrar sesión</span>
             </button>
           </div>
         </div>
@@ -1006,12 +1020,9 @@ const Activities = () => {
             <div style={{
               textAlign: 'center',
               padding: '3rem',
-              background: '#f3f4f6',
               borderRadius: '12px',
-              color: '#6b7280'
             }}>
               <p style={{ fontSize: '1.1rem', marginBottom: '0.5rem' }}>No tienes reservas aún</p>
-              <p style={{ fontSize: '0.9rem' }}>Explora las actividades y haz tu primera reserva</p>
             </div>
           ) : (
             <div style={{
@@ -1025,7 +1036,6 @@ const Activities = () => {
                   border: '1px solid #e5e7eb',
                   borderRadius: '12px',
                   padding: '1.5rem',
-                  boxShadow: '0 1px 3px rgba(0, 0, 0, 0.1)',
                   display: 'flex',
                   flexDirection: 'column'
                 }}>
@@ -1042,14 +1052,14 @@ const Activities = () => {
                     color: '#374151'
                   }}>
                     <p style={{ margin: '0.5rem 0' }}>
-                      <strong>📅 Fecha:</strong> {reserva.fecha}
+                      <strong>Fecha:</strong> {reserva.fecha}
                     </p>
                     <p style={{ margin: '0.5rem 0' }}>
-                      <strong>⏰ Hora:</strong> {reserva.hora}
+                      <strong>Hora:</strong> {reserva.hora}
                     </p>
                     {reserva.location && (
                       <p style={{ margin: '0.5rem 0' }}>
-                        <strong>📍 Ubicación:</strong> {reserva.location}
+                        <strong>Ubicación:</strong> {reserva.location}
                       </p>
                     )}
                   </div>
@@ -1078,7 +1088,6 @@ const Activities = () => {
           )}
           <div className="user-greeting">
             <h2>¡Hola, <span className="user-name">{usuario.nombre}</span>!</h2>
-            <p>Bienvenido a Salud Fest</p>
           </div>
         </div>
         <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
@@ -1086,21 +1095,16 @@ const Activities = () => {
           {String(usuario?.document_number) === '1020741340' && (
             <button 
               className="logout-button" 
-              onClick={() => navigate('/admin')}
-              title="Acceder al panel de administración"
-              style={{ background: 'rgba(239, 68, 68, 0.2)', borderColor: 'rgba(239, 68, 68, 0.5)' }}
+              onClick={() => navigate('/admin')} 
             >
-              <Shield size={20} />
-              <span>Panel Admin</span>
+              <UserStar size={20} />
             </button>
           )}
           <button 
             className="logout-button" 
             onClick={() => setShowMyReservations(true)}
             title="Ver mis reservas"
-            style={{ background: 'rgba(255, 255, 255, 0.2)' }}
           >
-            <Check size={20} />
             <span>Mis Reservas ({misReservas.length})</span>
           </button>
           <button 
@@ -1108,8 +1112,7 @@ const Activities = () => {
             onClick={handleLogout}
             title="Cerrar sesión"
           >
-            <LogOut size={20} />
-            <span>Cerrar sesión</span>
+            <LogOut size={20} />  
           </button>
         </div>
       </div>
