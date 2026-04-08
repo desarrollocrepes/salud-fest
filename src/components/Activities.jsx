@@ -1,12 +1,13 @@
 import './Activities.css';
 import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Check, ArrowLeft, Users, CheckCircle, X, ChevronDown, MapPin, Calendar, LogOut, Loader, UserStar } from 'lucide-react';
+import { Check, ArrowLeft, Users, CheckCircle, X, ChevronDown, MapPin, Calendar, LogOut, Loader, UserStar, Edit, Trash2, Plus, Save } from 'lucide-react';
 import Login from './Login';
 
 const STRAPI_BASE_URL = (import.meta.env.VITE_STRAPI_URL || 'https://macfer.crepesywaffles.com').replace(/\/$/, '');
 const STRAPI_ACTIVIDADES_ENDPOINT = import.meta.env.VITE_STRAPI_ACTIVIDADES_ENDPOINT || '/api/sintonizarte-saludfest-academias';
-const STRAPI_ACTIVIDADES_QUERY = import.meta.env.VITE_STRAPI_ACTIVIDADES_QUERY || 'populate[sesiones][populate]=*&populate=icon';
+// Probar con populate=* para traer TODAS las relaciones
+const STRAPI_ACTIVIDADES_QUERY = import.meta.env.VITE_STRAPI_ACTIVIDADES_QUERY || 'populate=*';
 
 const getAttributes = (item) => item?.attributes || item || {};
 
@@ -67,6 +68,82 @@ const formatFecha = (fechaStr) => {
   const dia = date.getDate();
   const mes = meses[date.getMonth()];
   return `${diaSemana} ${dia} ${mes}`;
+};
+
+// Convertir cualquier formato de fecha a formato ISO yyyy-MM-dd
+const formatToISODate = (fechaStr) => {
+  if (!fechaStr || typeof fechaStr !== 'string') return '';
+  
+  // Si ya está en formato ISO "2026-04-17", devolver como está
+  if (/^\d{4}-\d{2}-\d{2}$/.test(fechaStr)) return fechaStr;
+  
+  let date;
+  
+  // Formato español: "Viernes 17 abril" -> necesitamos agregar el año (2026)
+  if (/^[A-Z]\w+\s+\d{1,2}\s+\w+$/.test(fechaStr)) {
+    const meses = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+    const partes = fechaStr.split(' ');
+    const dia = parseInt(partes[1]);
+    const mesNombre = partes[2].toLowerCase();
+    const mesIndex = meses.indexOf(mesNombre);
+    
+    if (mesIndex !== -1) {
+      // Asumimos 2026 para las fechas del evento
+      date = new Date(2026, mesIndex, dia);
+    }
+  }
+  // Formato slash: "04/14/2026" o "14/04/2026"
+  else if (fechaStr.includes('/')) {
+    const parts = fechaStr.split('/');
+    if (parts.length === 3) {
+      const firstNum = parseInt(parts[0]);
+      const secondNum = parseInt(parts[1]);
+      if (firstNum > 12) {
+        // DD/MM/YYYY
+        date = new Date(parts[2], parts[1] - 1, parts[0]);
+      } else {
+        // MM/DD/YYYY
+        date = new Date(parts[2], parts[0] - 1, parts[1]);
+      }
+    }
+  }
+  // Formato con guión que no es ISO completo
+  else if (fechaStr.includes('-')) {
+    date = new Date(fechaStr + 'T00:00:00');
+  }
+  
+  if (!date || isNaN(date.getTime())) {
+    return fechaStr;
+  }
+  
+  // Convertir a formato ISO yyyy-MM-dd
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  const isoDate = `${year}-${month}-${day}`;
+  
+  return isoDate;
+};
+
+// Convertir formato de hora a HH:mm:ss.SSS
+const formatToISOTime = (horaStr) => {
+  if (!horaStr || typeof horaStr !== 'string') return '';
+  
+  // Si ya está en formato completo "HH:mm:ss.SSS", devolver como está
+  if (/^\d{2}:\d{2}:\d{2}\.\d{3}$/.test(horaStr)) return horaStr;
+  
+  // Si tiene formato "HH:mm:ss", agregar milisegundos
+  if (/^\d{2}:\d{2}:\d{2}$/.test(horaStr)) return `${horaStr}.000`;
+  
+  // Si tiene formato "HH:mm", agregar segundos y milisegundos
+  if (/^\d{1,2}:\d{2}$/.test(horaStr)) {
+    const [h, m] = horaStr.split(':');
+    const horaISO = `${h.padStart(2, '0')}:${m}:00.000`;
+    return horaISO;
+  }
+  
+  // Formato no reconocido
+  return horaStr;
 };
 
 const toAbsoluteMediaUrl = (url) => {
@@ -143,17 +220,22 @@ const normalizeHorarios = (horarios, fechaSession = '') => {
 };
 
 const normalizeSesiones = (sesiones) => {
+  
   const sessionItems = Array.isArray(sesiones)
     ? sesiones
     : Array.isArray(sesiones?.data)
       ? sesiones.data
       : [];
 
+
   // Normalizar cada horario individual
   const horariosNormalizados = sessionItems.flatMap((sessionItem) => {
     const topLevelId = sessionItem?.id;
     const topLevelDocumentId = sessionItem?.documentId;
     const session = getAttributes(sessionItem);
+    
+    // Log para debug de IDs
+    const finalId = topLevelId || session.id || topLevelDocumentId || session.documentId;
     
     // Combinar hora_inicio y hora_fin en formato "HH:MM - HH:MM"
     const horaInicio = session.hora_inicio || session.hora || '';
@@ -166,7 +248,7 @@ const normalizeSesiones = (sesiones) => {
     }
     
     return {
-      id: topLevelId || session.id || topLevelDocumentId || session.documentId,
+      id: finalId,
       dia: formatFecha(session.dia || ''),
       diaOriginal: session.dia,
       hora: horaFormato,
@@ -205,15 +287,26 @@ const normalizeActividad = (actividadItem) => {
   const topLevelId = actividadItem?.id;
   const topLevelDocumentId = actividadItem?.documentId;
   const actividad = getAttributes(actividadItem);
+  
+  const finalId = topLevelId || actividad.id || topLevelDocumentId || actividad.documentId;
+  
+  // Buscar el campo que contiene los horarios (puede tener diferentes nombres)
+  let horariosData = actividad.horarios 
+    || actividad.sintonizarte_saludfest_horarios 
+    || actividad.sesiones
+    || actividad.sintonizarte_saludfest_sesiones;
+  
+  const sesionesNormalizadas = normalizeSesiones(horariosData);
+  
   return {
-    id: topLevelId || actividad.id || topLevelDocumentId || actividad.documentId,
+    id: finalId,
     titulo: actividad.titulo || 'Actividad sin titulo',
     categoria: getCategoriaLabel(actividad.categoria),
     theme: getTheme(actividad.theme, actividad.categoria),
     icon: getIconUrl(actividad.icon || actividad.icono || actividad.iconUrl || actividad.iconURL),
     descripcion: actividad.descripcion || '',
     cupoMax: parseNumericValue(actividad.cupoMax, 0),
-    sesiones: normalizeSesiones(actividad.sesiones)
+    sesiones: sesionesNormalizadas
   };
 };
 
@@ -228,6 +321,7 @@ const fetchActividadesFromApi = async () => {
     params.forEach((value, key) => requestUrl.searchParams.append(key, value));
   }
 
+
   const response = await fetch(requestUrl.toString(), {
     headers: {
       'Content-Type': 'application/json'
@@ -239,7 +333,14 @@ const fetchActividadesFromApi = async () => {
   }
 
   const payload = await response.json();
+  
   const items = Array.isArray(payload?.data) ? payload.data : [];
+  
+  // Log de la primera actividad con sus horarios
+  if (items.length > 0) {
+    const primeraActividad = items[0];
+    const attr = getAttributes(primeraActividad);
+  }
 
   return items.map(normalizeActividad).filter((actividad) => actividad.id);
 };
@@ -251,7 +352,6 @@ const INSCRIPCIONES_API_URL = 'https://macfer.crepesywaffles.com/api/sintonizart
 
 const saveInscripcion = async (inscripcionData) => {
   try {
-    console.log('💾 Guardando inscripción con datos:', inscripcionData);
     const response = await fetch(INSCRIPCIONES_API_URL, {
       method: 'POST',
       headers: {
@@ -262,7 +362,6 @@ const saveInscripcion = async (inscripcionData) => {
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
-      console.error('Error response:', errorData);
       throw new Error(
         errorData?.message || 
         errorData?.error?.message || 
@@ -271,7 +370,6 @@ const saveInscripcion = async (inscripcionData) => {
     }
 
     const result = await response.json();
-    console.log('✅ Respuesta de API al guardar:', result);
     
     // Pequeno delay para asegurar que la API procesa la inscripción
     await new Promise(resolve => setTimeout(resolve, 500));
@@ -289,7 +387,6 @@ const fetchInscripcionesFromApi = async (documentNumber) => {
     const url = new URL(INSCRIPCIONES_API_URL);
     url.searchParams.append('populate', '*');
     
-    console.log('🔗 Fetch URL:', url.toString());
     
     const response = await fetch(url.toString());
     
@@ -300,19 +397,15 @@ const fetchInscripcionesFromApi = async (documentNumber) => {
     const payload = await response.json();
     const inscripciones = Array.isArray(payload?.data) ? payload.data : [];
     
-    console.log('📡 INSCRIPCIONES CRUDAS desde API:', inscripciones);
     
     // Filtrar solo las inscripciones del usuario actual
     const resultado = inscripciones.filter(ins => {
       const attr = getAttributes(ins);
-      console.log('🔍 Comparando documento - Usuario:', String(documentNumber), 'Inscripción:', String(attr.documento), 'Iguales:', String(attr.documento) === String(documentNumber));
       return String(attr.documento) === String(documentNumber);
     });
     
-    console.log('✅ Inscripciones filtradas del usuario:', resultado);
     return resultado;
   } catch (error) {
-    console.error('Error al obtener inscripciones:', error);
     return [];
   }
 };
@@ -320,7 +413,6 @@ const fetchInscripcionesFromApi = async (documentNumber) => {
 // Transformar inscripción de API a formato de reserva para mostrar
 const transformInscripcionToReserva = (inscripcion) => {
   const attr = getAttributes(inscripcion);
-  console.log('🔄 Transformando inscripción:', attr);
   
   // Extraer datos del primer horario relacionado
   let fecha = '';
@@ -329,7 +421,6 @@ const transformInscripcionToReserva = (inscripcion) => {
   
   if (attr.horarios && attr.horarios.data && Array.isArray(attr.horarios.data) && attr.horarios.data.length > 0) {
     const primerHorario = getAttributes(attr.horarios.data[0]);
-    console.log('📅 Primer horario:', primerHorario);
     
     // Formatear fecha
     if (primerHorario.dia) {
@@ -359,7 +450,6 @@ const transformInscripcionToReserva = (inscripcion) => {
     location: location,
     timestamp: attr.publishedAt || attr.createdAt || new Date().toISOString()
   };
-  console.log('✨ Reserva transformada:', reserva);
   return reserva;
 };
 
@@ -370,29 +460,22 @@ const validateDuplicateWorkshop = async (usuario, activity, activeDate) => {
   try {
     const inscripciones = await fetchInscripcionesFromApi(usuario.document_number);
     
-    console.log('🔍 Validando duplicado - Inscripciones del usuario:', inscripciones);
-    console.log('🔍 Buscando duplicado - Taller:', activity.titulo, 'Fecha:', activeDate);
     
     // Buscar inscripciones del mismo taller en la misma fecha
     const duplicado = inscripciones.find(ins => {
       const attr = getAttributes(ins);
-      console.log('🔍 Verificando inscripción - Area:', attr.area, 'Fecha:', attr.fecha);
       
       // Comparar área (taller)
       if (attr.area !== activity.titulo) {
-        console.log('  ❌ Área no coincide:', attr.area, '!=', activity.titulo);
         return false;
       }
       
-      console.log('  📅 Comparando fechas - Inscripción:', attr.fecha, '== Seleccionada:', activeDate);
       
       // Comparar fecha directamente del campo fecha de la inscripción
       if (attr.fecha !== activeDate) {
-        console.log('  ❌ Fecha no coincide');
         return false;
       }
       
-      console.log('  ✅ DUPLICADO ENCONTRADO!');
       return true;
     });
     
@@ -405,8 +488,131 @@ const validateDuplicateWorkshop = async (usuario, activity, activeDate) => {
     
     return { existe: false };
   } catch (error) {
-    console.error('Error validando duplicado:', error);
     return null;
+  }
+};
+
+// Función para crear una nueva sesión
+const createSesion = async (activityId, sesionData) => {
+  try {
+    
+
+    const payload = {
+      data: {
+        ...sesionData,
+        sintonizarte_saludfest_academia: activityId,
+        academia: activityId,
+        sintonizarte_saludfest_academias: {
+          connect: [activityId]
+        },
+        academias: {
+          connect: [activityId]
+        }
+      }
+    };
+    
+
+    const response = await fetch(`${STRAPI_BASE_URL}/api/sintonizarte-saludfest-horarios`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      console.error('❌ ERROR AL CREAR HORARIO - Detalles completos:', {
+        status: response.status,
+        statusText: response.statusText,
+        error: errorData,
+        activityId: activityId,
+        payload: payload
+      });
+      console.error('💡 AYUDA: Verifica en Strapi Admin Panel → Content-Type Builder → sintonizarte-saludfest-horarios → busca el campo de relación con academias y anota su "API ID (Singular)"');
+      throw new Error(
+        errorData?.error?.message || 
+        errorData?.message || 
+        `Error ${response.status}: No fue posible crear la sesión`
+      );
+    }
+
+    const result = await response.json();
+    console.log('✅ HORARIO CREADO EXITOSAMENTE:', result);
+    console.log('🔗 Verificar relación - result.data.attributes:', result?.data?.attributes);
+    console.log('🔗 Campos de relación encontrados:', 
+      Object.keys(result?.data?.attributes || {}).filter(key => 
+        key.includes('academia') || key.includes('sintonizarte')
+      )
+    );
+    console.log('🆕 ======================================\n');
+    return result;
+  } catch (error) {
+
+    throw new Error(error.message || 'Error al crear la sesión en el servidor');
+  }
+};
+
+// Función para actualizar una sesión existente
+const updateSesion = async (sesionId, sesionData) => {
+  try {
+    
+    const payload = {
+      data: sesionData
+    };
+    
+    
+    const response = await fetch(`${STRAPI_BASE_URL}/api/sintonizarte-saludfest-horarios/${sesionId}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(
+        errorData?.error?.message || 
+        errorData?.message || 
+        `Error ${response.status}: No fue posible actualizar la sesión`
+      );
+    }
+
+    const result = await response.json();
+    return result;
+  } catch (error) {
+    throw new Error(error.message || 'Error al actualizar la sesión en el servidor');
+  }
+};
+
+// Función para eliminar una sesión
+const deleteSesion = async (sesionId) => {
+  try {
+    
+    const response = await fetch(`${STRAPI_BASE_URL}/api/sintonizarte-saludfest-horarios/${sesionId}`, {
+      method: 'DELETE',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(
+        errorData?.error?.message || 
+        errorData?.message || 
+        `Error ${response.status}: No fue posible eliminar la sesión`
+      );
+    }
+
+    const result = await response.json();
+    return result;
+  } catch (error) {
+    throw new Error(error.message || 'Error al eliminar la sesión del servidor');
   }
 };
 
@@ -417,23 +623,18 @@ const validateTimeConflict = async (usuario, selectedSession, activeDate) => {
   try {
     const inscripciones = await fetchInscripcionesFromApi(usuario.document_number);
     
-    console.log('🕐 Validando conflicto - Inscripciones:', inscripciones);
-    console.log('🕐 Nuevo horario - Hora:', selectedSession.hora, 'Fecha:', activeDate);
     
     // Extraer horas del horario seleccionado
     const [horaInicio, horaFin] = selectedSession.hora.split(' - ').map(h => h.trim());
     
-    console.log('🕐 Horario a reservar - Inicio:', horaInicio, 'Fin:', horaFin);
     
     // Buscar conflictos de horario el mismo día
     for (const ins of inscripciones) {
       const attr = getAttributes(ins);
       
-      console.log('🕐 Inscripción existente - Fecha:', attr.fecha, 'Hora:', attr.hora);
       
       // Solo revisar inscripciones del mismo día
       if (attr.fecha !== activeDate) {
-        console.log('  ❌ Fecha diferente, sin conflicto');
         continue;
       }
       
@@ -441,7 +642,6 @@ const validateTimeConflict = async (usuario, selectedSession, activeDate) => {
       const [existHoraInicio, existHoraFin] = (attr.hora || '').split(' - ').map(h => h.trim());
       
       if (!existHoraInicio || !horaInicio) {
-        console.log('  ⚠️ No hay horas para comparar');
         continue;
       }
       
@@ -451,7 +651,6 @@ const validateTimeConflict = async (usuario, selectedSession, activeDate) => {
         if (parts.length !== 2) return null;
         const [h, m] = parts.map(Number);
         const result = h * 60 + m;
-        console.log(`    Convertiendo ${time} -> ${result} minutos`);
         return result;
       };
       
@@ -461,47 +660,177 @@ const validateTimeConflict = async (usuario, selectedSession, activeDate) => {
         const existInicio = toMinutes(existHoraInicio);
         const existFin = toMinutes(existHoraFin || existHoraInicio);
         
-        console.log('  ⏱️ En minutos - Nuevo: [', nuevoInicio, '-', nuevoFin, '] Existente: [', existInicio, '-', existFin, ']');
         
         // Verificar si hay solapamiento: 
         // Hay conflicto si: nuevo_inicio < existe_fin AND nuevo_fin > existe_inicio
         if (nuevoInicio < existFin && nuevoFin > existInicio) {
-          console.log('  ✅ CONFLICTO ENCONTRADO!');
           return {
             existe: true,
             mensaje: `Conflicto de horario: Ya tienes una inscripción a las ${existHoraInicio}${existHoraFin ? ` - ${existHoraFin}` : ''} el ${activeDate}. No puedes reservar un taller que se cruce con este horario.`
           };
         }
-        console.log('  ✅ Sin conflicto');
       } catch (e) {
-        console.error('Error comparando horarios:', e);
       }
     }
     
     return { existe: false };
   } catch (error) {
-    console.error('Error validando conflicto de horario:', error);
     return null;
   }
 };
 
-const SessionModal = ({ activity, isOpen, onClose, onSelect, registrations, usuario, onReservationSuccess }) => {
+const SessionModal = ({ activity, isOpen, onClose, onSelect, registrations, usuario, onReservationSuccess, isAdminMode, onEditSession, onDeleteSession, onCreateSession }) => {
   const [activeDate, setActiveDate] = useState(null);
   const [selectedSession, setSelectedSession] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
   const [showConfirmation, setShowConfirmation] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editingSession, setEditingSession] = useState(null);
+  const [isCreatingNew, setIsCreatingNew] = useState(false);
 
   useEffect(() => {
     if (isOpen && activity && activity.sesiones && activity.sesiones.length > 0) {
       setActiveDate(activity.sesiones[0].dia);
       setSelectedSession(null);
       setErrorMsg('');
+      setShowEditModal(false);
+      setEditingSession(null);
+      setIsCreatingNew(false);
       setSuccessMsg('');
       setShowConfirmation(false);
     }
   }, [isOpen, activity]);
+
+  const handleEditClick = (session) => {
+    
+    // Encontrar la fecha original (sin formato) de la sesión
+    const currentSessionGroup = activity.sesiones && activity.sesiones.find(s => s.dia === activeDate);
+    const diaOriginal = currentSessionGroup?.diaOriginal || activeDate;
+    
+    setEditingSession({
+      id: session.id,
+      dia: activeDate, // Para mostrar en el formulario
+      diaOriginal: diaOriginal, // Para enviar al backend
+      hora_inicio: session.hora.split(' - ')[0] || '',
+      hora_fin: session.hora.split(' - ')[1] || '',
+      actividad: session.actividad || '',
+      descripcion: session.descripcion || '',
+      location: session.location || '',
+      cuposDisponibles: session.cuposDisponibles || 0
+    });
+    setIsCreatingNew(false);
+    setShowEditModal(true);
+  };
+
+  const handleCreateClick = () => {
+    
+    // Encontrar la fecha original (sin formato)
+    const currentSessionGroup = activity.sesiones && activity.sesiones.find(s => s.dia === activeDate);
+    const diaOriginal = currentSessionGroup?.diaOriginal || activeDate;
+    
+    setEditingSession({
+      dia: activeDate, // Para mostrar en el formulario
+      diaOriginal: diaOriginal, // Para enviar al backend
+      hora_inicio: '',
+      hora_fin: '',
+      actividad: '',
+      descripcion: '',
+      location: '',
+      cuposDisponibles: 0
+    });
+    setIsCreatingNew(true);
+    setShowEditModal(true);
+  };
+
+  const handleSaveSession = async () => {
+    if (!editingSession) return;
+
+    setIsSubmitting(true);
+    setErrorMsg('');
+    setSuccessMsg('');
+
+    try {
+      // Usar la fecha original o parseada correctamente para el backend
+      let diaParaBackend = editingSession.diaOriginal || editingSession.dia;
+      
+      // Si el usuario modificó la fecha manualmente, intentar convertirla
+      if (editingSession.dia !== activeDate) {
+        diaParaBackend = editingSession.dia;
+      }
+      
+      // IMPORTANTE: Convertir la fecha a formato ISO yyyy-MM-dd para el backend
+      const diaISO = formatToISODate(diaParaBackend);
+      
+      // IMPORTANTE: Convertir las horas a formato HH:mm:ss.SSS para el backend
+      const horaInicioISO = formatToISOTime(editingSession.hora_inicio);
+      const horaFinISO = formatToISOTime(editingSession.hora_fin);
+      
+      const sessionData = {
+        dia: diaISO,
+        hora_inicio: horaInicioISO,
+        hora_fin: horaFinISO,
+        actividad: editingSession.actividad,
+        descripcion: editingSession.descripcion,
+        location: editingSession.location,
+        cuposDisponibles: parseInt(editingSession.cuposDisponibles) || 0
+      };
+
+
+      if (isCreatingNew) {
+        const result = await createSesion(activity.id, sessionData);
+        setSuccessMsg('¡Sesión creada exitosamente!');
+      } else {
+        const result = await updateSesion(editingSession.id, sessionData);
+        setSuccessMsg('¡Sesión actualizada exitosamente!');
+      }
+
+      // Refrescar actividades
+      if (onReservationSuccess) {
+        await onReservationSuccess();
+      }
+
+      setTimeout(() => {
+        setShowEditModal(false);
+        setEditingSession(null);
+        setSuccessMsg('');
+      }, 1500);
+    } catch (error) {
+      setErrorMsg(error.message || 'Error al guardar la sesión');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleDeleteClick = async (session) => {
+    
+    if (!confirm('¿Estás seguro de que deseas eliminar esta sesión?')) {
+      return;
+    }
+
+    setIsSubmitting(true);
+    setErrorMsg('');
+
+    try {
+      
+      const result = await deleteSesion(session.id);
+      setSuccessMsg('¡Sesión eliminada exitosamente!');
+
+      // Refrescar actividades
+      if (onReservationSuccess) {
+        await onReservationSuccess();
+      }
+
+      setTimeout(() => {
+        setSuccessMsg('');
+      }, 1500);
+    } catch (error) {
+      setErrorMsg(error.message || 'Error al eliminar la sesión');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
   const handleConfirmInscripcion = async () => {
     if (!selectedSession) {
@@ -524,47 +853,28 @@ const SessionModal = ({ activity, isOpen, onClose, onSelect, registrations, usua
     setSuccessMsg('');
 
     try {
-      console.log('================================');
-      console.log('🚀 INICIANDO VALIDACIONES');
-      console.log('================================');
-      console.log('Usuario:', usuario?.document_number, usuario?.nombre);
-      console.log('Actividad:', activity?.titulo);
-      console.log('Fecha:', activeDate);
-      console.log('Sesión:', selectedSession?.hora);
       
       // ✅ VALIDACIÓN 1: Verificar duplicado del mismo taller el mismo día
-      console.log('\n📍 VALIDACIÓN 1: DUPLICADO');
-      console.log('----------------------------');
       const duplicadoCheck = await validateDuplicateWorkshop(usuario, activity, activeDate);
-      console.log('Resultado:', duplicadoCheck);
       
       if (duplicadoCheck?.existe) {
-        console.log('❌ DUPLICADO DETECTADO');
         setErrorMsg(duplicadoCheck.mensaje);
         setShowConfirmation(false);
         setIsSubmitting(false);
         return;
       }
-      console.log('✅ SIN DUPLICADO');
       
       // ✅ VALIDACIÓN 2: Verificar conflicto de horarios
-      console.log('\n📍 VALIDACIÓN 2: CONFLICTO HORARIO');
-      console.log('-----------------------------------');
       const conflictoCheck = await validateTimeConflict(usuario, selectedSession, activeDate);
-      console.log('Resultado:', conflictoCheck);
       
       if (conflictoCheck?.existe) {
-        console.log('❌ CONFLICTO DETECTADO');
         setErrorMsg(conflictoCheck.mensaje);
         setShowConfirmation(false);
         setIsSubmitting(false);
         return;
       }
-      console.log('✅ SIN CONFLICTO');
       
       // ✅ Si pasó todas las validaciones, proceder con la inscripción
-      console.log('\n📍 GUARDANDO INSCRIPCIÓN');
-      console.log('------------------------');
       const inscripcionData = {
         data: {
           nombre: usuario.nombre || '',
@@ -579,12 +889,9 @@ const SessionModal = ({ activity, isOpen, onClose, onSelect, registrations, usua
         }
       };
 
-      console.log('✅ Datos a guardar:', inscripcionData);
-      console.log('💾 Guardando en API...');
       
       await saveInscripcion(inscripcionData);
       
-      console.log('✅ INSCRIPCIÓN GUARDADA EXITOSAMENTE');
       setSuccessMsg('¡Inscripción realizada con éxito!');
       setShowConfirmation(false);
       
@@ -604,12 +911,10 @@ const SessionModal = ({ activity, isOpen, onClose, onSelect, registrations, usua
         onClose();
       }, 2000);
     } catch (error) {
-      console.error('❌ Error en inscripción:', error);
       setErrorMsg(error.message || 'Error al realizar la inscripción');
       setShowConfirmation(false);
     } finally {
       setIsSubmitting(false);
-      console.log('================================\n');
     }
   };
 
@@ -619,6 +924,144 @@ const SessionModal = ({ activity, isOpen, onClose, onSelect, registrations, usua
   const uniqueDates = (activity.sesiones || []).map(s => s.dia);
   const currentSessionGroup = activity.sesiones && activity.sesiones.find(s => s.dia === activeDate);
   const currentSessions = currentSessionGroup ? currentSessionGroup.horarios : [];
+
+  // Modal de edición de sesión
+  if (showEditModal && editingSession) {
+    return (
+      <div className="modal-overlay">
+        <div className="edit-modal-content">
+          <div className="edit-modal-header">
+            <h3>
+              {isCreatingNew ? 'Crear Nueva Sesión' : 'Editar Sesión'}
+            </h3>
+            <button onClick={() => setShowEditModal(false)} className="modal-close-btn" disabled={isSubmitting}>
+              <X className="w-6 h-6 text-gray-400" />
+            </button>
+          </div>
+
+          <div className="edit-modal-body">
+            {errorMsg && (
+              <div className="alert-message alert-error">
+                <X className="w-5 h-5 flex-shrink-0" />
+                <span>{errorMsg}</span>
+              </div>
+            )}
+            {successMsg && (
+              <div className="alert-message alert-success">
+                <CheckCircle className="w-5 h-5 flex-shrink-0" />
+                <span>{successMsg}</span>
+              </div>
+            )}
+
+            <div className="edit-form-grid">
+              <div className="edit-form-group">
+                <label className="edit-form-label">Fecha</label>
+                <input
+                  type="text"
+                  value={editingSession.dia}
+                  onChange={(e) => setEditingSession({ ...editingSession, dia: e.target.value })}
+                  className="edit-form-input"
+                  placeholder="Martes 14 abril"
+                  disabled={isSubmitting}
+                />
+              </div>
+
+              <div className="edit-form-row">
+                <div className="edit-form-group">
+                  <label className="edit-form-label">Hora Inicio</label>
+                  <input
+                    type="time"
+                    value={editingSession.hora_inicio}
+                    onChange={(e) => setEditingSession({ ...editingSession, hora_inicio: e.target.value })}
+                    className="edit-form-input"
+                    disabled={isSubmitting}
+                  />
+                </div>
+                <div className="edit-form-group">
+                  <label className="edit-form-label">Hora Fin</label>
+                  <input
+                    type="time"
+                    value={editingSession.hora_fin}
+                    onChange={(e) => setEditingSession({ ...editingSession, hora_fin: e.target.value })}
+                    className="edit-form-input"
+                    disabled={isSubmitting}
+                  />
+                </div>
+              </div>
+
+              <div className="edit-form-group">
+                <label className="edit-form-label">Ubicación (Sala)</label>
+                <input
+                  type="text"
+                  value={editingSession.location}
+                  onChange={(e) => setEditingSession({ ...editingSession, location: e.target.value })}
+                  className="edit-form-input"
+                  placeholder="sala 3"
+                  disabled={isSubmitting}
+                />
+              </div>
+
+              <div className="edit-form-group">
+                <label className="edit-form-label">Actividad</label>
+                <input
+                  type="text"
+                  value={editingSession.actividad}
+                  onChange={(e) => setEditingSession({ ...editingSession, actividad: e.target.value })}
+                  className="edit-form-input"
+                  placeholder="Nombre de la actividad"
+                  disabled={isSubmitting}
+                />
+              </div>
+
+              <div className="edit-form-group">
+                <label className="edit-form-label">Descripción</label>
+                <textarea
+                  value={editingSession.descripcion}
+                  onChange={(e) => setEditingSession({ ...editingSession, descripcion: e.target.value })}
+                  className="edit-form-textarea"
+                  placeholder="Descripción de la sesión"
+                  disabled={isSubmitting}
+                />
+              </div>
+
+              <div className="edit-form-group">
+                <label className="edit-form-label">Cupos Disponibles</label>
+                <input
+                  type="number"
+                  min="0"
+                  value={editingSession.cuposDisponibles}
+                  onChange={(e) => setEditingSession({ ...editingSession, cuposDisponibles: e.target.value })}
+                  className="edit-form-input"
+                  disabled={isSubmitting}
+                />
+              </div>
+            </div>
+          </div>
+
+          <div className="edit-modal-footer">
+            <button
+              onClick={() => setShowEditModal(false)}
+              disabled={isSubmitting}
+              className="edit-btn-cancel"
+            >
+              Cancelar
+            </button>
+            <button
+              onClick={handleSaveSession}
+              disabled={isSubmitting}
+              className={`edit-btn-save ${isEmerald ? 'emerald' : ''}`}
+            >
+              {isSubmitting ? (
+                <><Loader className="w-4 h-4 animate-spin" /> Guardando...</>
+              ) : (
+                <><Save className="w-4 h-4" /> Guardar</>
+              )}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   // Modal de confirmación
   if (showConfirmation && selectedSession) {
@@ -759,6 +1202,19 @@ const SessionModal = ({ activity, isOpen, onClose, onSelect, registrations, usua
             ))}
           </div>
 
+          {/* Botón para crear nueva sesión (solo admin) */}
+          {isAdminMode && (
+            <div className="create-session-container">
+              <button
+                onClick={handleCreateClick}
+                disabled={isSubmitting}
+                className={`create-session-btn ${isEmerald ? 'emerald' : ''}`}
+              >
+                <Plus className="w-5 h-5" /> Crear Nueva Sesión
+              </button>
+            </div>
+          )}
+
           <div className="horarios-section">
             {currentSessions && currentSessions.length > 0 ? (
               <div className="session-grid">
@@ -766,37 +1222,65 @@ const SessionModal = ({ activity, isOpen, onClose, onSelect, registrations, usua
                   const isFull = session.cuposDisponibles === 0;
                   const isSelected = selectedSession?.id === session.id;
                   return (
-                    <button
-                      key={idx}
-                      onClick={() => {
-                        !isFull && setSelectedSession(session);
-                        setErrorMsg(''); // Limpiar errores al seleccionar nuevo horario
-                      }}
-                      className={`session-slot ${isFull ? 'full' : ''} ${isSelected ? 'selected' : ''}`}
-                      disabled={isSubmitting}
-                    >
-                      <div className="flex justify-between items-start mb-2">
-                        <span className="session-time font-semibold text-gray-800">{session.hora}</span>
-                      </div>
+                    <div key={idx} style={{ position: 'relative' }}>
+                      <button
+                        onClick={() => {
+                          if (!isAdminMode) {
+                            !isFull && setSelectedSession(session);
+                            setErrorMsg(''); // Limpiar errores al seleccionar nuevo horario
+                          }
+                        }}
+                        className={`session-slot ${isFull ? 'full' : ''} ${isSelected ? 'selected' : ''}`}
+                        disabled={isSubmitting}
+                        style={{ cursor: isAdminMode ? 'default' : (isFull ? 'not-allowed' : 'pointer') }}
+                      >
+                        <div className="flex justify-between items-start mb-2">
+                          <span className="session-time font-semibold text-gray-800">{session.hora}</span>
+                        </div>
+                        
+                        {session.location && (
+                          <div className="flex items-center text-xs text-gray-600 mb-2">{session.location}</div>
+                        )}
+                        
+                        {session.actividad && (
+                          <div className="text-xs text-gray-700 mb-2 font-medium">{session.actividad}</div>
+                        )}
+                        
+                        {session.descripcion && (
+                          <div className="text-xs text-gray-600 mb-2 italic">{session.descripcion}</div>
+                        )}
+                        
+                        <div className="flex items-center justify-between mt-auto">
+                          <span className={`cupos-tag ${isFull ? 'full' : 'available'}`}>
+                            {isFull ? 'AGOTADO' : `${session.cuposDisponibles} CUPO${session.cuposDisponibles !== 1 ? 'S' : ''}`}
+                          </span>
+                        </div>
+                      </button>
                       
-                      {session.location && (
-                        <div className="flex items-center text-xs text-gray-600 mb-2">{session.location}</div>
+                      {/* Botones de administración */}
+                      {isAdminMode && (
+                        <div className="admin-action-buttons">
+                          <button
+                            onClick={() => handleEditClick(session)}
+                            disabled={isSubmitting}
+                            className="admin-btn-edit"
+                            aria-label="Editar sesión"
+                            title="Editar"
+                          >
+                            <Edit className="w-5 h-5" />
+                          </button>
+                          <button
+                            onClick={() => handleDeleteClick(session)}
+                            disabled={isSubmitting}
+                            className="admin-btn-delete"
+                            aria-label="Eliminar sesión"
+                            title="Eliminar"
+                          >
+                            <Trash2 className="w-5 h-5" />
+                          </button>
+                        </div>
                       )}
-                      
-                      {session.actividad && (
-                        <div className="text-xs text-gray-700 mb-2 font-medium">{session.actividad}</div>
-                      )}
-                      
-                      {session.descripcion && (
-                        <div className="text-xs text-gray-600 mb-2 italic">{session.descripcion}</div>
-                      )}
-                      
-                      <div className="flex items-center justify-between mt-auto">
-                        <span className={`cupos-tag ${isFull ? 'full' : 'available'}`}>
-                          {isFull ? 'AGOTADO' : `${session.cuposDisponibles} CUPO${session.cuposDisponibles !== 1 ? 'S' : ''}`}
-                        </span>
-                      </div>
-                    </button>
+                    </div>
                   );
                 })}
               </div>
@@ -820,23 +1304,26 @@ const SessionModal = ({ activity, isOpen, onClose, onSelect, registrations, usua
           )}
         </div>
 
-        <div className="modal-footer">
-          <button 
-            onClick={handleConfirmInscripcion} 
-            className={`confirm-btn ${isEmerald ? '' : 'purple'} ${!selectedSession || isSubmitting ? 'opacity-50 cursor-not-allowed' : ''}`}
-            disabled={!selectedSession || isSubmitting}
-          >
-            {isSubmitting ? (
-              <>
-                <Loader className="w-4 h-4 animate-spin" /> GUARDANDO...
-              </>
-            ) : (
-              <>
-                CONFIRMAR INSCRIPCIÓN <Check className="w-4 h-4" />
-              </>
-            )}
-          </button>
-        </div>
+        {/* Footer solo si no es modo admin */}
+        {!isAdminMode && (
+          <div className="modal-footer">
+            <button 
+              onClick={handleConfirmInscripcion} 
+              className={`confirm-btn ${isEmerald ? '' : 'purple'} ${!selectedSession || isSubmitting ? 'opacity-50 cursor-not-allowed' : ''}`}
+              disabled={!selectedSession || isSubmitting}
+            >
+              {isSubmitting ? (
+                <>
+                  <Loader className="w-4 h-4 animate-spin" /> GUARDANDO...
+                </>
+              ) : (
+                <>
+                  CONFIRMAR INSCRIPCIÓN <Check className="w-4 h-4" />
+                </>
+              )}
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -1048,6 +1535,7 @@ const Activities = () => {
   const [usuario, setUsuario] = useState(null);
   const [misReservas, setMisReservas] = useState([]);
   const [showMyReservations, setShowMyReservations] = useState(false);
+  const [isAdminMode, setIsAdminMode] = useState(false);
 
   // Verificar si hay usuario en localStorage al montar
   useEffect(() => {
@@ -1064,7 +1552,6 @@ const Activities = () => {
         };
         cargarReservas();
       } catch (err) {
-        console.error('Error al parsear usuario:', err);
         localStorage.removeItem('usuario');
       }
     }
@@ -1141,7 +1628,6 @@ const Activities = () => {
           }
         }
       } catch (error) {
-        console.error('Error al recargar actividades:', error);
       }
     }
   };
@@ -1287,12 +1773,23 @@ const Activities = () => {
         <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
           {console.log('Debug - document_number:', usuario?.document_number, 'Type:', typeof usuario?.document_number) || null}
           {String(usuario?.document_number) === '1020741340' && (
-            <button 
-              className="logout-button" 
-              onClick={() => navigate('/admin')} 
-            >
-              <UserStar size={20} />
-            </button>
+            <>
+              <button 
+                className="logout-button" 
+                onClick={() => navigate('/admin')} 
+                title="Panel de administración"
+              >
+                <UserStar size={20} />
+              </button>
+              <button 
+                className={`logout-button ${isAdminMode ? 'admin-mode-active' : ''}`}
+                onClick={() => setIsAdminMode(!isAdminMode)}
+                title={isAdminMode ? 'Desactivar modo edición' : 'Activar modo edición'}
+              >
+                <Edit size={20} />
+                {isAdminMode && <span>Modo Edición</span>}
+              </button>
+            </>
           )}
           <button 
             className="logout-button" 
@@ -1324,6 +1821,7 @@ const Activities = () => {
         registrations={registrations}
         usuario={usuario}
         onReservationSuccess={refreshReservasFromApi}
+        isAdminMode={isAdminMode}
       />
     </div>
   );
