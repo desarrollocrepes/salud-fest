@@ -361,7 +361,20 @@ const saveInscripcion = async (inscripcionData) => {
     });
 
     if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
+      let errorData = {};
+      try {
+        errorData = await response.json();
+      } catch (e) {
+        errorData = { message: response.statusText };
+      }
+      
+      console.error('❌ Error al guardar inscripción:', {
+        status: response.status,
+        statusText: response.statusText,
+        errorData: errorData,
+        sentData: inscripcionData
+      });
+      
       throw new Error(
         errorData?.message || 
         errorData?.error?.message || 
@@ -370,12 +383,14 @@ const saveInscripcion = async (inscripcionData) => {
     }
 
     const result = await response.json();
+    console.log('✅ Inscripción guardada exitosamente:', result);
     
     // Pequeno delay para asegurar que la API procesa la inscripción
     await new Promise(resolve => setTimeout(resolve, 500));
     
     return result;
   } catch (error) {
+    console.error('❌ Exception en saveInscripcion:', error);
     throw new Error(error.message || 'Error al guardar la inscripción en el servidor');
   }
 };
@@ -689,6 +704,7 @@ const SessionModal = ({ activity, isOpen, onClose, onSelect, registrations, usua
   const [showEditModal, setShowEditModal] = useState(false);
   const [editingSession, setEditingSession] = useState(null);
   const [isCreatingNew, setIsCreatingNew] = useState(false);
+  const [phoneInput, setPhoneInput] = useState('');
 
   useEffect(() => {
     if (isOpen && activity && activity.sesiones && activity.sesiones.length > 0) {
@@ -700,6 +716,7 @@ const SessionModal = ({ activity, isOpen, onClose, onSelect, registrations, usua
       setIsCreatingNew(false);
       setSuccessMsg('');
       setShowConfirmation(false);
+      setPhoneInput('');
     }
   }, [isOpen, activity]);
 
@@ -853,6 +870,14 @@ const SessionModal = ({ activity, isOpen, onClose, onSelect, registrations, usua
     setSuccessMsg('');
 
     try {
+      // Validar que tenga teléfono (registrado o ingresado en el modal)
+      const telefonoDisponible = usuario.telefono || phoneInput;
+      
+      if (!telefonoDisponible || !String(telefonoDisponible).trim()) {
+        setErrorMsg('Por favor ingresa tu número de teléfono');
+        setIsSubmitting(false);
+        return;
+      }
       
       // ✅ VALIDACIÓN 1: Verificar duplicado del mismo taller el mismo día
       const duplicadoCheck = await validateDuplicateWorkshop(usuario, activity, activeDate);
@@ -875,11 +900,15 @@ const SessionModal = ({ activity, isOpen, onClose, onSelect, registrations, usua
       }
       
       // ✅ Si pasó todas las validaciones, proceder con la inscripción
+      // Limpiar teléfono: solo números
+      const telefonoLimpio = String(telefonoDisponible).replace(/\D/g, '').trim();
+      const telefonoNumero = telefonoLimpio ? parseInt(telefonoLimpio, 10) : null;
+      
       const inscripcionData = {
         data: {
           nombre: usuario.nombre || '',
           documento: String(usuario.document_number),
-          telefono: usuario.telefono ? parseInt(usuario.telefono) : 0,
+          telefono: telefonoNumero,
           correo: usuario.correo || '',
           area: activity.titulo || '',
           fecha: activeDate || '',
@@ -888,6 +917,8 @@ const SessionModal = ({ activity, isOpen, onClose, onSelect, registrations, usua
           horarios: [parseInt(selectedSession.id)],
         }
       };
+      
+      console.log('📤 Datos siendo enviados a la API:', JSON.stringify(inscripcionData, null, 2));
 
       
       await saveInscripcion(inscripcionData);
@@ -908,6 +939,7 @@ const SessionModal = ({ activity, isOpen, onClose, onSelect, registrations, usua
         setSelectedSession(null);
         setSuccessMsg('');
         setErrorMsg('');
+        setPhoneInput('');
         onClose();
       }, 2000);
     } catch (error) {
@@ -1065,9 +1097,12 @@ const SessionModal = ({ activity, isOpen, onClose, onSelect, registrations, usua
 
   // Modal de confirmación
   if (showConfirmation && selectedSession) {
+    const telefonoDisponible = usuario.telefono || phoneInput;
+    const telefonoVacio = !telefonoDisponible || !String(telefonoDisponible).trim();
+    
     return (
       <div className="modal-overlay">
-        <div className="modal-content" style={{ maxWidth: '400px' }}>
+        <div className="modal-content" style={{ maxWidth: '420px' }}>
           <div style={{ padding: '2rem', textAlign: 'center' }}>
             <h3 style={{ fontSize: '1.3rem', fontWeight: '700', marginBottom: '1rem', color: '#111827' }}>
               Confirmar Reserva
@@ -1114,6 +1149,48 @@ const SessionModal = ({ activity, isOpen, onClose, onSelect, registrations, usua
               )}
             </div>
 
+            {/* Campo de teléfono */}
+            <div style={{ marginBottom: '1.5rem' }}>
+              <label style={{
+                display: 'block',
+                fontSize: '0.9rem',
+                fontWeight: '600',
+                marginBottom: '0.5rem',
+                color: '#374151',
+                textAlign: 'left'
+              }}>
+                Número de Teléfono {telefonoVacio && <span style={{ color: '#dc2626' }}>*</span>}
+              </label>
+              <input
+                type="tel"
+                value={phoneInput || usuario.telefono || ''}
+                onChange={(e) => setPhoneInput(e.target.value)}
+                placeholder="Ingresa tu número de teléfono"
+                disabled={isSubmitting}
+                style={{
+                  width: '100%',
+                  padding: '0.75rem',
+                  border: telefonoVacio ? '2px solid #fca5a5' : '1px solid #d1d5db',
+                  borderRadius: '8px',
+                  fontSize: '0.95rem',
+                  boxSizing: 'border-box',
+                  background: '#fff',
+                  color: '#111827',
+                  transition: 'all 0.2s'
+                }}
+              />
+              {telefonoVacio && (
+                <p style={{
+                  fontSize: '0.85rem',
+                  color: '#dc2626',
+                  marginTop: '0.5rem',
+                  textAlign: 'left'
+                }}>
+                  El teléfono es requerido para completar la inscripción
+                </p>
+              )}
+            </div>
+
             <p style={{ fontSize: '0.95rem', color: '#6b7280', marginBottom: '1.5rem' }}>
               ¿Estás seguro de que deseas confirmar esta reserva?
             </p>
@@ -1138,7 +1215,7 @@ const SessionModal = ({ activity, isOpen, onClose, onSelect, registrations, usua
               </button>
               <button
                 onClick={handleConfirmReservation}
-                disabled={isSubmitting || !!errorMsg}
+                disabled={isSubmitting || telefonoVacio}
                 style={{
                   flex: 1,
                   padding: '0.75rem',
@@ -1147,8 +1224,8 @@ const SessionModal = ({ activity, isOpen, onClose, onSelect, registrations, usua
                   background: isEmerald ? '#10b981' : '#a855f7',
                   color: '#fff',
                   fontWeight: '600',
-                  cursor: (isSubmitting || !!errorMsg) ? 'not-allowed' : 'pointer',
-                  opacity: (isSubmitting || !!errorMsg) ? 0.7 : 1,
+                  cursor: (isSubmitting || telefonoVacio) ? 'not-allowed' : 'pointer',
+                  opacity: (isSubmitting || telefonoVacio) ? 0.7 : 1,
                   transition: 'all 0.2s',
                   display: 'flex',
                   alignItems: 'center',
