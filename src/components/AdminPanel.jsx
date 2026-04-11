@@ -10,7 +10,8 @@ import {
   CheckCircle,
   Clock,
   AlertCircle,
-  X
+  X,
+  Trash2
 } from 'lucide-react';
 
 // Obtener inscripciones desde la API
@@ -28,6 +29,12 @@ const fetchInscripciones = async () => {
     // Transformar datos de API al formato esperado
     return inscripciones.map(item => {
       const attr = item?.attributes || item || {};
+      
+      // Extraer datos de la actividad y reserva
+      const horaActividad = attr.hora || 'Sin hora';
+      const fechaReserva = attr.fecha || 'Sin fecha';
+      const ubicacion = attr.ubicacion || 'Sin ubicación';
+      
       return {
         id: item.id || Date.now(),
         nombre: attr.nombre || 'Sin nombre',
@@ -38,7 +45,9 @@ const fetchInscripciones = async () => {
         sesion: '',
         status: 'confirmado',
         fecha: new Date(attr.createdAt || attr.publishedAt || new Date()),
-        ubicacion: ''
+        ubicacion: ubicacion,
+        horaActividad: horaActividad,
+        fechaReserva: fechaReserva
       };
     });
   } catch (error) {
@@ -55,6 +64,8 @@ const AdminPanel = ({ onBack }) => {
   const [filterCourse, setFilterCourse] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
   const [sortConfig, setSortConfig] = useState({ key: 'fecha', direction: 'desc' });
+  const [currentPage, setCurrentPage] = useState(1);
+  const ITEMS_PER_PAGE = 20;
 
   // Cargar inscripciones desde la API
   useEffect(() => {
@@ -79,6 +90,11 @@ const AdminPanel = ({ onBack }) => {
     });
   }, [inscriptions, searchTerm, filterCourse, filterStatus]);
 
+  // Resetear paginación cuando filtros cambien
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, filterCourse, filterStatus]);
+
   // Ordenar
   const sortedInscriptions = useMemo(() => {
     let sorted = [...filteredInscriptions];
@@ -94,6 +110,12 @@ const AdminPanel = ({ onBack }) => {
     }
     return sorted;
   }, [filteredInscriptions, sortConfig]);
+
+  // Calcular paginación
+  const totalPages = Math.ceil(sortedInscriptions.length / ITEMS_PER_PAGE);
+  const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
+  const endIndex = startIndex + ITEMS_PER_PAGE;
+  const paginatedInscriptions = sortedInscriptions.slice(startIndex, endIndex);
 
   // Obtener cursos únicos
   const courses = useMemo(() => {
@@ -135,8 +157,34 @@ const AdminPanel = ({ onBack }) => {
     );
   };
 
+  const handleDeleteReserva = async (id, nombre) => {
+    const confirmDelete = window.confirm(
+      `¿Estás seguro de que deseas eliminar la reserva de ${nombre}? Esta acción no se puede deshacer.`
+    );
+    
+    if (!confirmDelete) return;
+
+    try {
+      const response = await fetch(
+        `https://macfer.crepesywaffles.com/api/sintonizarte-saludfest-inscripcions/${id}`,
+        { method: 'DELETE' }
+      );
+
+      if (!response.ok) {
+        throw new Error(`Error ${response.status}: No fue posible eliminar la inscripción`);
+      }
+
+      // Actualizar la lista de inscripciones
+      setInscriptions(prev => prev.filter(insc => insc.id !== id));
+      alert('Reserva eliminada exitosamente');
+    } catch (error) {
+      console.error('Error al eliminar inscripción:', error);
+      alert('Error al eliminar la reserva. Por favor, intenta de nuevo.');
+    }
+  };
+
   const handleExportCSV = () => {
-    const headers = ['ID', 'Nombre', 'Documento', 'Email', 'Teléfono', 'Curso', 'Sesión', 'Estado'];
+    const headers = ['ID', 'Nombre', 'Documento', 'Email', 'Teléfono', 'Actividad', 'Ubicación', 'Hora Actividad', 'Fecha Reserva', 'Fecha Inscripción', 'Hora Inscripción', 'Estado'];
     const rows = sortedInscriptions.map(insc => [
       insc.id,
       insc.nombre,
@@ -144,7 +192,11 @@ const AdminPanel = ({ onBack }) => {
       insc.email,
       insc.telefono,
       insc.curso,
-      insc.sesion,
+      insc.ubicacion,
+      insc.horaActividad,
+      insc.fechaReserva,
+      insc.fecha.toLocaleDateString('es-ES'),
+      insc.fecha.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', hour12: false }),
       insc.status
     ]);
     
@@ -183,22 +235,16 @@ const AdminPanel = ({ onBack }) => {
         </div>
       </div>
 
-      {/* Estadísticas */}
-      <div className="stats-grid">
-        <div className="stat-card">
+      {/* Estadísticas y Filtros en una fila */}
+      <div className="header-controls">
+        <div className="stats-inline">
           <div className="stat-icon stat-icon-primary">
             <Users size={24} />
           </div>
-          <div>
-            <p className="stat-value">Total de Inscripciones: {stats.total}</p>
-          </div>
+          <p className="stat-value">Total de Inscripciones: {stats.total}</p>
         </div>
-      </div>
 
-      {/* Filtros */}
-      <div className="filters-section">
-
-        <div className="filters-group">
+        <div className="filters-inline">
           <select 
             value={filterCourse} 
             onChange={(e) => setFilterCourse(e.target.value)}
@@ -214,8 +260,8 @@ const AdminPanel = ({ onBack }) => {
             onClick={handleExportCSV}
             className="admin-btn-primary flex items-center gap-2"
           >
-          <Download size={20} />
-          Exportar CSV
+            <Download size={20} />
+            Exportar CSV
           </button>
         </div>
       </div>
@@ -231,12 +277,16 @@ const AdminPanel = ({ onBack }) => {
               <th onClick={() => handleSort('email')}>Email</th>
               <th onClick={() => handleSort('telefono')}>Teléfono</th>
               <th onClick={() => handleSort('curso')}>Actividad</th>
+              <th>Ubicación</th>
+              <th>Hora Actividad</th>
+              <th>Fecha Reserva</th>
               <th>Fecha Inscripción</th>
+              <th>Acciones</th>
             </tr>
           </thead>
           <tbody>
-            {sortedInscriptions.length > 0 ? (
-              sortedInscriptions.map(insc => (
+            {paginatedInscriptions.length > 0 ? (
+              paginatedInscriptions.map(insc => (
                 <tr key={insc.id}>
                   <td className="font-medium">#{insc.id}</td>
                   <td className="font-medium text-gray-900">{insc.nombre}</td>
@@ -248,12 +298,33 @@ const AdminPanel = ({ onBack }) => {
                       {insc.curso}
                     </span>
                   </td>
-                  <td className="text-sm text-gray-600">{insc.fecha.toLocaleDateString('es-ES')}</td>
+                  <td className="text-sm text-gray-600 font-medium text-center">
+                    {insc.ubicacion}
+                  </td>
+                  <td className="text-sm text-gray-600 font-medium text-center">
+                    {insc.horaActividad}
+                  </td>
+                  <td className="text-sm text-gray-600 text-center">
+                    {insc.fechaReserva}
+                  </td>
+                  <td className="text-sm text-gray-600">
+                    {insc.fecha.toLocaleDateString('es-ES')} {insc.fecha.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', hour12: false })}
+                  </td>
+                  <td className="text-center">
+                    <button
+                      onClick={() => handleDeleteReserva(insc.id, insc.nombre)}
+                      className="inline-flex items-center gap-2 px-3 py-1 bg-red-100 text-red-700 rounded hover:bg-red-200 transition text-sm font-medium"
+                      title="Eliminar reserva"
+                    >
+                      <Trash2 size={16} />
+                      Eliminar
+                    </button>
+                  </td>
                 </tr>
               ))
             ) : (
               <tr>
-                <td colSpan="7" className="text-center py-8 text-gray-500">
+                <td colSpan="11" className="text-center py-8 text-gray-500">
                   No hay inscripciones que coincidan con los filtros
                 </td>
               </tr>
@@ -261,6 +332,42 @@ const AdminPanel = ({ onBack }) => {
           </tbody>
         </table>
       </div>
+
+      {/* Paginación */}
+      {sortedInscriptions.length > 0 && (
+        <div className="pagination-container">
+          <div className="pagination-info">
+            Mostrando {startIndex + 1} - {Math.min(endIndex, sortedInscriptions.length)} de {sortedInscriptions.length} registros
+          </div>
+          <div className="pagination-controls">
+            <button
+              onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+              disabled={currentPage === 1}
+              className="pagination-btn"
+            >
+              ← Anterior
+            </button>
+            <div className="pagination-pages">
+              {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => (
+                <button
+                  key={page}
+                  onClick={() => setCurrentPage(page)}
+                  className={`pagination-page-btn ${currentPage === page ? 'active' : ''}`}
+                >
+                  {page}
+                </button>
+              ))}
+            </div>
+            <button
+              onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+              disabled={currentPage === totalPages}
+              className="pagination-btn"
+            >
+              Siguiente →
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
