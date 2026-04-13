@@ -1602,6 +1602,7 @@ const SaludFestView = ({ selectedActivity, onBackToHome, onSelectSession }) => {
 
 const Activities = () => {
   const navigate = useNavigate();
+  const ADMIN_DOCUMENTS = ['1020741340', '1010042891'];
   const [currentView, setCurrentView] = useState('home');
   const [selectedActivity, setSelectedActivity] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -1849,7 +1850,7 @@ const Activities = () => {
         </div>
         <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
           {console.log('Debug - document_number:', usuario?.document_number, 'Type:', typeof usuario?.document_number) || null}
-          {String(usuario?.document_number) === '1020741340' && (
+          {ADMIN_DOCUMENTS.includes(String(usuario?.document_number)) && (
             <>
               <button 
                 className="logout-button" 
